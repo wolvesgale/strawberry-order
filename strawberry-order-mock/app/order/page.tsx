@@ -61,24 +61,27 @@ export default function OrderPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-slate-950">
       <div className="max-w-md mx-auto px-4 py-8 space-y-6">
         <header className="space-y-2">
-          <h1 className="text-2xl font-bold text-slate-900">
+          <h1 className="text-2xl font-bold text-slate-50">
             いちご発注フォーム（モック）
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-400">
             商品とセット数だけ入力して発注テストができます。
           </p>
         </header>
 
-        <form onSubmit={handleSubmit} className="space-y-4 bg-white rounded-xl shadow px-4 py-5">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 bg-slate-900 border border-slate-700 rounded-xl shadow-sm px-4 py-5"
+        >
           <div>
-            <label className="block mb-1 text-sm font-medium text-slate-800">
+            <label className="block mb-1 text-sm font-medium text-slate-100">
               商品
             </label>
             <select
-              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
             >
@@ -89,25 +92,25 @@ export default function OrderPage() {
               ))}
             </select>
             {selectedProduct && (
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-slate-400">
                 単価：{selectedProduct.unitPrice.toLocaleString()}円（税抜） / セット
               </p>
             )}
           </div>
 
           <div>
-            <label className="block mb-1 text-sm font-medium text-slate-800">
+            <label className="block mb-1 text-sm font-medium text-slate-100">
               セット数
             </label>
             <input
               type="number"
               min={2}
               step={2}
-              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-400">
               ※ 基本は偶数。冬いちごは4の倍数が必要です。
             </p>
           </div>
@@ -115,19 +118,19 @@ export default function OrderPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-md bg-red-600 text-white text-sm font-semibold py-2 disabled:opacity-50"
+            className="w-full rounded-md bg-red-600 text-white text-sm font-semibold py-2 hover:bg-red-500 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? '送信中...' : '発注する（モック）'}
           </button>
         </form>
 
         {message && (
-          <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+          <p className="text-sm text-emerald-100 bg-emerald-900/40 border border-emerald-700 rounded-md px-3 py-2">
             {message}
           </p>
         )}
         {error && (
-          <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+          <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
             {error}
           </p>
         )}
@@ -135,7 +138,7 @@ export default function OrderPage() {
         <div className="text-right">
           <a
             href="/admin/orders"
-            className="text-xs text-slate-600 underline hover:text-slate-900"
+            className="text-xs text-slate-300 underline hover:text-slate-100"
           >
             管理画面（モック）へ
           </a>
