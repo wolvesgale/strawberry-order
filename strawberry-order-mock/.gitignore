@@ -39,3 +39,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+strawberry-order-mock/node_modules
+strawberry-order-mock/.next
