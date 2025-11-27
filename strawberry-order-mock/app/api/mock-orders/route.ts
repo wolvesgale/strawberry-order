@@ -15,6 +15,13 @@ type MockOrder = {
   totalAmount: number;
   status: MockOrderStatus;
   createdAt: string; // ISO
+
+  // 送り先情報（v1 では1件分のみ）
+  shippingPostalAndAddress: string;
+  shippingRecipientName: string;
+  shippingPhoneNumber: string;
+  shippingDeliveryDate: string;
+  shippingDeliveryTimeNote: string;
 };
 
 // メモリ上の「なんちゃってDB」
@@ -63,10 +70,28 @@ function yen(amount: number) {
   return amount.toLocaleString('ja-JP');
 }
 
-// v1 のメール本文テンプレート
+// メール本文テンプレート（送り先情報つき）
 function buildOrderEmailBody(order: MockOrder): string {
   const now = new Date();
   const orderedAt = now.toLocaleString('ja-JP');
+
+  const shippingInfoLines = [
+    `郵便番号・住所：`,
+    `  ${order.shippingPostalAndAddress || '（未入力）'}`,
+    ``,
+    `お届け先氏名：`,
+    `  ${order.shippingRecipientName || '（未入力）'}`,
+    ``,
+    `運送会社と連絡が取れる電話番号：`,
+    `  ${order.shippingPhoneNumber || '（未入力）'}`,
+    ``,
+    `ご希望の到着日時：`,
+    `  ${
+      order.shippingDeliveryDate || order.shippingDeliveryTimeNote
+        ? `${order.shippingDeliveryDate ?? ''} ${order.shippingDeliveryTimeNote ?? ''}`.trim()
+        : '（未入力）'
+    }`,
+  ].join('\n');
 
   return `
 （株）グリーンサム 御中
@@ -93,12 +118,10 @@ function buildOrderEmailBody(order: MockOrder): string {
 ・合計金額：${yen(order.totalAmount)}円（税込）
 
 【お届け先情報】
-※ 現在は試験運用中のため、送り先の
-　・郵便番号・住所
-　・お届け先氏名
-　・運送会社と連絡が取れる電話番号
-　・ご希望の到着日時
-については、別途メールにてご連絡いたします。
+${shippingInfoLines}
+
+※ 現在は試験運用中です。内容に誤りがないかご確認のうえ、
+　ご対応いただけますと幸いです。
 
 【出荷完了後のご返信フォーマット（ご提案）】
 お手数ですが、出荷完了後は下記の形式でご返信いただけますと幸いです。
@@ -136,7 +159,7 @@ async function sendOrderEmail(order: MockOrder) {
   }
 
   let toAddresses: string[] = [];
-  let ccAddresses: string[] = [];
+  const ccAddresses: string[] = [];
 
   if (mode === 'test') {
     const testTo = ccCommon || from;
@@ -203,9 +226,22 @@ export function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { productId, quantity } = body as {
-      productId?: string;
-      quantity?: number;
+    const {
+      productId,
+      quantity,
+      postalAndAddress,
+      recipientName,
+      phoneNumber,
+      deliveryDate,
+      deliveryTimeNote,
+    } = body as {
+      productId: string;
+      quantity: number;
+      postalAndAddress?: string;
+      recipientName?: string;
+      phoneNumber?: string;
+      deliveryDate?: string;
+      deliveryTimeNote?: string;
     };
 
     if (!productId || typeof quantity !== 'number') {
@@ -256,6 +292,11 @@ export async function POST(req: Request) {
       totalAmount,
       status: 'pending',
       createdAt: new Date().toISOString(),
+      shippingPostalAndAddress: postalAndAddress ?? '',
+      shippingRecipientName: recipientName ?? '',
+      shippingPhoneNumber: phoneNumber ?? '',
+      shippingDeliveryDate: deliveryDate ?? '',
+      shippingDeliveryTimeNote: deliveryTimeNote ?? '',
     };
 
     // メモリDBに保存（モック用）
@@ -264,7 +305,10 @@ export async function POST(req: Request) {
     // メール送信（失敗しても注文自体は受け付ける）
     await sendOrderEmail(order);
 
-    return NextResponse.json({ orderNumber: order.orderNumber }, { status: 201 });
+    return NextResponse.json(
+      { orderNumber: order.orderNumber },
+      { status: 201 }
+    );
   } catch (e) {
     console.error(e);
     return NextResponse.json(
