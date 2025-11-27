@@ -73,7 +73,9 @@ function yen(amount: number) {
 // メール本文テンプレート（送り先情報つき）
 function buildOrderEmailBody(order: MockOrder): string {
   const now = new Date();
-  const orderedAt = now.toLocaleString('ja-JP');
+  const orderedAt = now.toLocaleString('ja-JP', {
+  timeZone: 'Asia/Tokyo',
+});
 
   const shippingInfoLines = [
     `郵便番号・住所：`,
