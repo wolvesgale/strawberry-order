@@ -1,15 +1,10 @@
-// lib/supabaseClient.ts
-import { createClient } from '@supabase/supabase-js';
+// strawberry-order-mock/lib/supabaseClient.ts
+"use client";
 
-// Vercel の Environment Variables に自動で入っている値を使う
+import { createClient } from "@supabase/supabase-js";
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  );
-}
-
-// クライアント側で使う Supabase クライアント（DB 型付けは一旦なし）
+// クライアント側で使う Supabase インスタンス
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

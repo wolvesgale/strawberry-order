@@ -1,7 +1,33 @@
 // app/order/page.tsx
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "../../lib/supabaseClient"; // パスは位置に合わせて調整
+
+export default function OrderPage() {
+  const router = useRouter();
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    async function check() {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        router.push("/login");
+        return;
+      }
+      setChecking(false);
+    }
+    check();
+  }, [router]);
+
+  if (checking) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-50">
+        <p>ログイン状態を確認しています...</p>
+      </main>
+    );
+  }
 
 type MockProduct = {
   id: string;

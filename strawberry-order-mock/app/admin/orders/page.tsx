@@ -22,6 +22,7 @@ type AdminOrder = {
 
 export default function OrderPage() {
   const router = useRouter();
+
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,20 +30,44 @@ export default function OrderPage() {
 
   useEffect(() => {
     async function init() {
-      // ① ログインチェック
-      const { data, error } = await supabase.auth.getUser();
+      // 1) Supabase 認証チェック
+      const {
+        data: authData,
+        error: authError,
+      } = await supabase.auth.getUser();
 
-      if (error) {
-        console.error("Supabase auth error", error);
+      if (authError) {
+        console.error("Supabase auth error", authError);
       }
 
-      if (!data?.user) {
-        // 未ログイン → /login へ飛ばす
+      const user = authData?.user;
+
+      if (!user) {
+        // 未ログイン → /login に飛ばす
         router.push("/login");
         return;
       }
 
-      // ② 注文一覧取得
+      // 2) プロフィールから role を取得（admin 以外はフォーム画面へ）
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError) {
+        console.error("Failed to load profile", profileError);
+        router.push("/login");
+        return;
+      }
+
+      if (!profile || profile.role !== "admin") {
+        // 代理店ユーザーなど → 自分の注文フォームへ
+        router.push("/order");
+        return;
+      }
+
+      // 3) 注文一覧取得
       try {
         setLoading(true);
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
