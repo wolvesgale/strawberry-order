@@ -1,272 +1,304 @@
 // app/order/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabaseClient"; // パスは位置に合わせて調整
-
-export default function OrderPage() {
-  const router = useRouter();
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    async function check() {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        router.push("/login");
-        return;
-      }
-      setChecking(false);
-    }
-    check();
-  }, [router]);
-
-  if (checking) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-50">
-        <p>ログイン状態を確認しています...</p>
-      </main>
-    );
-  }
+import { useEffect, useState, FormEvent } from "react";
+import Link from "next/link";
 
 type MockProduct = {
   id: string;
   name: string;
+  season: "summer" | "winter";
   unitPrice: number;
   taxRate: number;
-  season: 'summer' | 'summer-autumn' | 'winter';
 };
 
-type OrderState = 'idle' | 'submitting' | 'success' | 'error';
+type OrderState = "idle" | "submitting" | "success" | "error";
+
+type ShippingForm = {
+  postalAndAddress: string;
+  recipientName: string;
+  phoneNumber: string;
+  deliveryDate: string;
+  deliveryTimeNote: string;
+};
 
 export default function OrderPage() {
   const [products, setProducts] = useState<MockProduct[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(4);
+  const [shipping, setShipping] = useState<ShippingForm>({
+    postalAndAddress: "",
+    recipientName: "",
+    phoneNumber: "",
+    deliveryDate: "",
+    deliveryTimeNote: "",
+  });
 
-  // 追加した項目
-  const [postalAndAddress, setPostalAndAddress] = useState('');
-  const [recipientName, setRecipientName] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [deliveryDate, setDeliveryDate] = useState('');
-  const [deliveryTimeNote, setDeliveryTimeNote] = useState('');
+  const [orderState, setOrderState] = useState<OrderState>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
 
-  const [orderState, setOrderState] = useState<OrderState>('idle');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [lastOrderNumber, setLastOrderNumber] = useState<string | null>(null);
-
+  // 商品一覧取得
   useEffect(() => {
-    const fetchProducts = async () => {
-      const res = await fetch('/api/mock-products');
-      const data = await res.json();
-      setProducts(data.products ?? []);
-      if (data.products?.length > 0) {
-        setSelectedProductId(data.products[0].id);
+    async function fetchProducts() {
+      try {
+        const res = await fetch("/api/mock-products", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error("商品一覧の取得に失敗しました。");
+        }
+        const json = await res.json();
+        const list = (json.products ?? []) as MockProduct[];
+        setProducts(list);
+        if (list.length > 0) {
+          setSelectedProductId(list[0].id);
+        }
+      } catch (e: any) {
+        console.error(e);
+        setError(e.message ?? "商品一覧の取得に失敗しました。");
       }
-    };
+    }
+
     fetchProducts();
   }, []);
 
-  const selectedProduct = products.find((p) => p.id === selectedProductId);
+  const selectedProduct = products.find((p) => p.id === selectedProductId) ?? null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleChangeShipping = (
+    field: keyof ShippingForm,
+    value: string
+  ) => {
+    setShipping((prev) => ({ ...prev, [field]: value }));
+  };
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!selectedProductId) return;
 
-    setOrderState('submitting');
-    setErrorMessage(null);
-    setLastOrderNumber(null);
+    if (!selectedProductId) {
+      setError("商品を選択してください。");
+      return;
+    }
+
+    if (quantity <= 0 || quantity % 2 !== 0) {
+      setError("セット数は1以上の偶数で入力してください。");
+      return;
+    }
+
+    if (selectedProduct?.season === "winter" && quantity % 4 !== 0) {
+      setError("冬いちごは4の倍数で発注してください。");
+      return;
+    }
+
+    setError(null);
+    setOrderState("submitting");
+    setOrderNumber(null);
 
     try {
-      const res = await fetch('/api/mock-orders', {
-        method: 'POST',
+      const res = await fetch("/api/mock-orders", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           productId: selectedProductId,
           quantity,
-          postalAndAddress,
-          recipientName,
-          phoneNumber,
-          deliveryDate,
-          deliveryTimeNote,
+          postalAndAddress: shipping.postalAndAddress || "（未入力）",
+          recipientName: shipping.recipientName || "（未入力）",
+          phoneNumber: shipping.phoneNumber || "（未入力）",
+          deliveryDate: shipping.deliveryDate || "",
+          deliveryTimeNote: shipping.deliveryTimeNote || "",
         }),
       });
 
-      const data = await res.json();
+      const json = await res.json();
 
       if (!res.ok) {
-        setOrderState('error');
-        setErrorMessage(data.error ?? '発注に失敗しました。');
-        return;
+        throw new Error(json.error ?? "発注に失敗しました。");
       }
 
-      setOrderState('success');
-      setLastOrderNumber(data.orderNumber ?? null);
-    } catch (err) {
-      console.error(err);
-      setOrderState('error');
-      setErrorMessage('通信エラーが発生しました。');
+      setOrderNumber(json.orderNumber ?? null);
+      setOrderState("success");
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message ?? "発注に失敗しました。");
+      setOrderState("error");
     }
-  };
+  }
+
+  const formattedSubtotal =
+    selectedProduct ? selectedProduct.unitPrice * quantity : 0;
 
   return (
-    <main className="min-h-screen bg-slate-950">
-      <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
-        <header className="space-y-2">
-          <h1 className="text-2xl font-bold text-slate-50">
-            いちご発注フォーム（モック）
-          </h1>
-          <p className="text-sm text-slate-400">
-            商品とセット数、お届け先情報を入力して発注テストができます。
-            メールは現在テストモードで、代理店側のアドレスにのみ送信されます。
-          </p>
-        </header>
-
-        <form
-          onSubmit={handleSubmit}
-          className="bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-6 shadow-sm"
-        >
-          {/* 商品選択 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-100">
-              商品
-            </label>
-            <select
-              className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-50 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-              value={selectedProductId}
-              onChange={(e) => setSelectedProductId(e.target.value)}
-            >
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            {selectedProduct && (
-              <p className="text-xs text-slate-400">
-                単価：{selectedProduct.unitPrice.toLocaleString()}円（税抜） /
-                セット　税率：
-                {(selectedProduct.taxRate * 100).toFixed(0)}
-                %
-              </p>
-            )}
-          </div>
-
-          {/* セット数 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-100">
-              セット数（シート数）
-            </label>
-            <input
-              type="number"
-              min={2}
-              step={2}
-              className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-50 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-              value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-            />
-            <p className="text-xs text-slate-400">
-              ※ 基本は偶数。冬いちごは4の倍数が必要です。
+    <main className="min-h-screen bg-slate-900 text-slate-100 px-4 py-8">
+      <div className="max-w-3xl mx-auto space-y-8">
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold mb-1">発注フォーム（モック）</h1>
+            <p className="text-sm text-slate-400">
+              テスト用の発注フォームです。送信するとSES経由でメールが送信されます。
             </p>
           </div>
-
-          <hr className="border-slate-800" />
-
-          {/* 送り先情報 */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-100">
-              送り先郵便番号・住所
-            </label>
-            <textarea
-              className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-50 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-              rows={2}
-              placeholder={`例）\n454-0012 名古屋市中川区尾頭橋2-16-11\nクレフラスト尾頭橋101`}
-              value={postalAndAddress}
-              onChange={(e) => setPostalAndAddress(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-100">
-              お届け先氏名
-            </label>
-            <input
-              type="text"
-              className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-50 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-              placeholder="例）古田　貴香"
-              value={recipientName}
-              onChange={(e) => setRecipientName(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-100">
-              運送会社と連絡が取れる電話番号
-            </label>
-            <input
-              type="tel"
-              className="w-full bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-50 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-              placeholder="例）080-6980-4543"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-100">
-              希望の到着日時
-            </label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                type="date"
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-50 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-                value={deliveryDate}
-                onChange={(e) => setDeliveryDate(e.target.value)}
-              />
-              <input
-                type="text"
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-50 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-                placeholder="例）午前中 / 14〜16時 など"
-                value={deliveryTimeNote}
-                onChange={(e) => setDeliveryTimeNote(e.target.value)}
-              />
-            </div>
-            <p className="text-xs text-slate-400">
-              例）12/2 午前中、12/5 午前中 など。
-            </p>
-          </div>
-
-          {/* エラー表示 */}
-          {orderState === 'error' && errorMessage && (
-            <p className="text-sm text-red-400">{errorMessage}</p>
-          )}
-
-          {/* 成功メッセージ */}
-          {orderState === 'success' && lastOrderNumber && (
-            <p className="text-sm text-emerald-400">
-              発注を受け付けました。注文ID：{lastOrderNumber}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={orderState === 'submitting'}
-            className="w-full mt-2 rounded-md bg-red-600 text-white text-sm font-semibold py-2 disabled:opacity-60 disabled:cursor-not-allowed hover:bg-red-500 transition"
-          >
-            {orderState === 'submitting' ? '送信中…' : '発注する（モック）'}
-          </button>
-        </form>
-
-        <div className="text-right">
-          <a
+          <Link
             href="/admin/orders"
             className="text-xs text-slate-400 hover:text-slate-200 underline"
           >
             管理画面（モック）へ
-          </a>
-        </div>
+          </Link>
+        </header>
+
+        {error && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-200">
+            {error}
+          </div>
+        )}
+
+        {orderState === "success" && orderNumber && (
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            <p className="font-semibold mb-1">発注を受け付けました。</p>
+            <p>注文ID：{orderNumber}</p>
+          </div>
+        )}
+
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-6 rounded-xl border border-slate-700/80 bg-slate-900/60 p-6"
+        >
+          {/* 商品 */}
+          <section className="space-y-3">
+            <h2 className="text-base font-semibold">商品情報</h2>
+            <div className="space-y-2">
+              <label className="block text-sm text-slate-300">
+                商品<span className="text-red-400 ml-1 text-xs">必須</span>
+              </label>
+              <select
+                className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
+                value={selectedProductId}
+                onChange={(e) => setSelectedProductId(e.target.value)}
+              >
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}（単価: {p.unitPrice.toLocaleString("ja-JP")}円）
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm text-slate-300">
+                セット数（シート数）
+                <span className="text-red-400 ml-1 text-xs">必須</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={2}
+                className="w-40 rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
+                value={quantity}
+                onChange={(e) => setQuantity(Number(e.target.value) || 0)}
+              />
+              <p className="text-xs text-slate-400">
+                基本は偶数。冬いちごは4の倍数での発注をお願いします。
+              </p>
+            </div>
+
+            {selectedProduct && (
+              <div className="rounded-lg border border-slate-700/70 bg-slate-800/60 px-4 py-3 text-sm">
+                <p>
+                  小計：{formattedSubtotal.toLocaleString("ja-JP")}円（税抜）
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  税率 {Math.round(selectedProduct.taxRate * 100)}% が適用されます。
+                </p>
+              </div>
+            )}
+          </section>
+
+          {/* お届け先 */}
+          <section className="space-y-3">
+            <h2 className="text-base font-semibold">お届け先情報</h2>
+
+            <div className="space-y-1">
+              <label className="block text-sm text-slate-300">
+                郵便番号・住所
+              </label>
+              <textarea
+                className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
+                rows={2}
+                value={shipping.postalAndAddress}
+                onChange={(e) =>
+                  handleChangeShipping("postalAndAddress", e.target.value)
+                }
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm text-slate-300">
+                お届け先氏名
+              </label>
+              <input
+                className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
+                value={shipping.recipientName}
+                onChange={(e) =>
+                  handleChangeShipping("recipientName", e.target.value)
+                }
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm text-slate-300">
+                運送会社と連絡が取れる電話番号
+              </label>
+              <input
+                className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
+                value={shipping.phoneNumber}
+                onChange={(e) =>
+                  handleChangeShipping("phoneNumber", e.target.value)
+                }
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm text-slate-300">
+                ご希望の納品日
+              </label>
+              <input
+                type="date"
+                className="rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
+                value={shipping.deliveryDate}
+                onChange={(e) =>
+                  handleChangeShipping("deliveryDate", e.target.value)
+                }
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm text-slate-300">
+                ご希望の時間帯・備考
+              </label>
+              <textarea
+                className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
+                rows={2}
+                value={shipping.deliveryTimeNote}
+                onChange={(e) =>
+                  handleChangeShipping("deliveryTimeNote", e.target.value)
+                }
+              />
+            </div>
+
+            <p className="text-xs text-slate-500">
+              入力されなかった項目は「（未入力）」としてメール文面に表示されます。
+            </p>
+          </section>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={orderState === "submitting"}
+              className="inline-flex items-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 disabled:opacity-60"
+            >
+              {orderState === "submitting" ? "送信中…" : "この内容で発注する"}
+            </button>
+          </div>
+        </form>
       </div>
     </main>
   );
