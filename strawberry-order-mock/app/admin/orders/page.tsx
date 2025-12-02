@@ -22,52 +22,25 @@ type AdminOrder = {
 
 export default function OrderPage() {
   const router = useRouter();
-
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ログインチェック & 注文一覧取得
   useEffect(() => {
     async function init() {
-      // 1) Supabase 認証チェック
-      const {
-        data: authData,
-        error: authError,
-      } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getUser();
 
-      if (authError) {
-        console.error("Supabase auth error", authError);
+      if (error) {
+        console.error("Supabase auth error", error);
       }
 
-      const user = authData?.user;
-
-      if (!user) {
-        // 未ログイン → /login に飛ばす
+      if (!data?.user) {
         router.push("/login");
         return;
       }
 
-      // 2) プロフィールから role を取得（admin 以外はフォーム画面へ）
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      if (profileError) {
-        console.error("Failed to load profile", profileError);
-        router.push("/login");
-        return;
-      }
-
-      if (!profile || profile.role !== "admin") {
-        // 代理店ユーザーなど → 自分の注文フォームへ
-        router.push("/order");
-        return;
-      }
-
-      // 3) 注文一覧取得
       try {
         setLoading(true);
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
@@ -105,6 +78,15 @@ export default function OrderPage() {
     init();
   }, [router]);
 
+  // ログアウト処理
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Logout error", error);
+    }
+    router.push("/login");
+  };
+
   if (checkingAuth) {
     return (
       <main className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
@@ -116,19 +98,39 @@ export default function OrderPage() {
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 px-4 py-8">
       <div className="max-w-5xl mx-auto">
-        <header className="flex items-center justify-between mb-8">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold mb-1">注文一覧（モック）</h1>
             <p className="text-sm text-slate-400">
               /order から発注したテストデータがここに一覧で表示されます。
             </p>
           </div>
-          <a
-            href="/order"
-            className="text-xs text-slate-400 hover:text-slate-200 underline"
-          >
-            発注フォームへ
-          </a>
+
+          <div className="flex flex-wrap items-center gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => router.push("/order")}
+              className="rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+            >
+              発注フォームへ
+            </button>
+
+            <button
+              type="button"
+              onClick={() => router.push("/admin/users")}
+              className="rounded-lg border border-indigo-500/70 bg-indigo-900/30 px-3 py-1.5 text-xs font-medium text-indigo-100 hover:bg-indigo-800/60"
+            >
+              ユーザー管理へ
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-lg border border-red-500/60 bg-red-900/20 px-3 py-1.5 text-xs font-medium text-red-100 hover:bg-red-800/60"
+            >
+              ログアウト
+            </button>
+          </div>
         </header>
 
         {error && (
@@ -147,8 +149,12 @@ export default function OrderPage() {
                 <th className="px-4 py-3 text-right font-medium">小計</th>
                 <th className="px-4 py-3 text-right font-medium">税額</th>
                 <th className="px-4 py-3 text-right font-medium">合計</th>
-                <th className="px-4 py-3 text-center font-medium">ステータス</th>
-                <th className="px-4 py-3 text-center font-medium">受付日時</th>
+                <th className="px-4 py-3 text-center font-medium">
+                  ステータス
+                </th>
+                <th className="px-4 py-3 text-center font-medium">
+                  受付日時
+                </th>
               </tr>
             </thead>
             <tbody>
