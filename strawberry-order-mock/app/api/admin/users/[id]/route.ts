@@ -1,21 +1,14 @@
 // app/api/admin/users/[id]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../../lib/supabaseAdmin";
 
 type Role = "admin" | "agency";
 
 export async function PATCH(
-  request: Request,
-  context: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
-  if (!supabaseAdmin) {
-    return NextResponse.json(
-      { error: "Supabase admin client が設定されていません。" },
-      { status: 500 }
-    );
-  }
-
-  const userId = context.params.id;
+  const { id: userId } = await context.params;
 
   try {
     const body = (await request.json().catch(() => ({}))) as {
@@ -23,8 +16,7 @@ export async function PATCH(
       agencyId?: string | null;
     };
 
-    const role = body.role;
-    const agencyId = body.agencyId ?? null;
+    const { role, agencyId } = body;
 
     if (!role) {
       return NextResponse.json(
@@ -33,91 +25,115 @@ export async function PATCH(
       );
     }
 
-    if (role === "agency" && !agencyId) {
+    const admin = supabaseAdmin;
+    if (!admin) {
+      console.error(
+        "[PATCH /api/admin/users/:id] Supabase admin client is not configured"
+      );
       return NextResponse.json(
-        { error: "代理店ユーザーには所属代理店が必須です。" },
-        { status: 400 }
+        { error: "Supabase admin client が設定されていません。" },
+        { status: 500 }
       );
     }
 
-    const { error: updateError } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        role,
-        agency_id: role === "agency" ? agencyId : null,
-      })
-      .eq("id", userId);
+    const updates: { role: Role; agency_id?: string | null } = { role };
 
-    if (updateError) {
+    if (role === "agency") {
+      if (!agencyId) {
+        return NextResponse.json(
+          { error: "代理店ユーザーには所属代理店が必須です。" },
+          { status: 400 }
+        );
+      }
+      updates.agency_id = agencyId;
+    } else {
+      updates.agency_id = null;
+    }
+
+    const { error: profileError } = await admin
+      .from("profiles")
+      .update(updates)
+      .eq("user_id", userId);
+
+    if (profileError) {
       console.error(
-        "[PATCH /api/admin/users/:id] profile update error",
-        updateError
+        "[PATCH /api/admin/users/:id] profiles update error",
+        profileError
       );
       return NextResponse.json(
-        { error: "プロフィール更新中にエラーが発生しました。" },
+        { error: "プロフィールの更新に失敗しました。" },
         { status: 500 }
       );
     }
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error("[PATCH /api/admin/users/:id] unexpected error", e);
+    console.error(
+      "[PATCH /api/admin/users/:id] unexpected error",
+      e
+    );
     return NextResponse.json(
-      { error: "プロフィール更新中に予期しないエラーが発生しました。" },
+      { error: "予期せぬエラーが発生しました。" },
       { status: 500 }
     );
   }
 }
 
 export async function DELETE(
-  _request: Request,
-  context: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
-  if (!supabaseAdmin) {
-    return NextResponse.json(
-      { error: "Supabase admin client が設定されていません。" },
-      { status: 500 }
-    );
-  }
-
-  const userId = context.params.id;
+  const { id: userId } = await context.params;
 
   try {
-    const { error: authError } =
-      await supabaseAdmin.auth.admin.deleteUser(userId);
-
-    if (authError) {
+    const admin = supabaseAdmin;
+    if (!admin) {
       console.error(
-        "[DELETE /api/admin/users/:id] auth delete error",
-        authError
+        "[DELETE /api/admin/users/:id] Supabase admin client is not configured"
       );
       return NextResponse.json(
-        { error: "認証ユーザーの削除に失敗しました。" },
+        { error: "Supabase admin client が設定されていません。" },
         { status: 500 }
       );
     }
 
-    const { error: profileError } = await supabaseAdmin
+    const { error: profileError } = await admin
       .from("profiles")
       .delete()
-      .eq("id", userId);
+      .eq("user_id", userId);
 
     if (profileError) {
       console.error(
-        "[DELETE /api/admin/users/:id] profile delete error",
+        "[DELETE /api/admin/users/:id] profiles delete error",
         profileError
       );
       return NextResponse.json(
-        { error: "プロフィールの削除に失敗しました。" },
+        { error: "プロフィール削除時にエラーが発生しました。" },
+        { status: 500 }
+      );
+    }
+
+    const { error: authError } = await admin.auth.admin.deleteUser(userId);
+
+    if (authError) {
+      console.error(
+        "[DELETE /api/admin/users/:id] auth deleteUser error",
+        authError
+      );
+      return NextResponse.json(
+        { error: "認証ユーザー削除時にエラーが発生しました。" },
         { status: 500 }
       );
     }
 
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error("[DELETE /api/admin/users/:id] unexpected error", e);
+    console.error(
+      "[DELETE /api/admin/users/:id] unexpected error",
+      e
+    );
     return NextResponse.json(
-      { error: "ユーザー削除中に予期しないエラーが発生しました。" },
+      { error: "予期せぬエラーが発生しました。" },
       { status: 500 }
     );
   }
