@@ -1,9 +1,11 @@
 // strawberry-order-mock/app/login/page.tsx
+// app/login/page.tsx
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabaseClient";
+// これに統一
+import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
