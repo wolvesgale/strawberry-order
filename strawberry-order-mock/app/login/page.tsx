@@ -2,9 +2,9 @@
 // app/login/page.tsx
 "use client";
 
+import type { FormEvent } from "react"; // ★ これを追加
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-// これに統一
 import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
