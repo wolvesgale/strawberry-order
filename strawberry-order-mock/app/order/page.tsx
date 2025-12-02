@@ -189,7 +189,7 @@ export default function OrderPage() {
               </label>
               <input
                 type="number"
-                min={1}
+                min={2}
                 step={2}
                 className="w-40 rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm"
                 value={quantity}

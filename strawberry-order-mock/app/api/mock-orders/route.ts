@@ -1,9 +1,9 @@
 // app/api/mock-orders/route.ts
-import { NextResponse } from 'next/server';
-import { MOCK_PRODUCTS, MockProduct } from '../mock-products/route';
-import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { NextResponse } from "next/server";
+import { MOCK_PRODUCTS, MockProduct } from "../mock-products/route";
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
-type MockOrderStatus = 'pending' | 'shipped' | 'canceled';
+type MockOrderStatus = "pending" | "shipped" | "canceled";
 
 type MockOrder = {
   id: string;
@@ -15,31 +15,31 @@ type MockOrder = {
   totalAmount: number;
   status: MockOrderStatus;
   createdAt: string; // ISO
-
-  // 送り先情報（v1 では1件分のみ）
-  shippingPostalAndAddress: string;
-  shippingRecipientName: string;
-  shippingPhoneNumber: string;
-  shippingDeliveryDate: string;
-  shippingDeliveryTimeNote: string;
+  agencyName?: string;
+  createdByEmail?: string;
+  shippingPostalAndAddress?: string;
+  shippingRecipientName?: string;
+  shippingPhoneNumber?: string;
+  shippingDeliveryDate?: string;
+  shippingDeliveryTimeNote?: string;
 };
 
 // メモリ上の「なんちゃってDB」
 let ORDERS: MockOrder[] = [];
 
 // メールモード
-type MailMode = 'disabled' | 'test' | 'production';
+type MailMode = "disabled" | "test" | "production";
 
 function getMailMode(): MailMode {
   const raw = process.env.ORDER_MAIL_MODE;
-  if (raw === 'production' || raw === 'test' || raw === 'disabled') {
+  if (raw === "production" || raw === "test" || raw === "disabled") {
     return raw;
   }
   // 何も設定されていなければ安全側に倒す
-  return 'disabled';
+  return "disabled";
 }
 
-// SES クライアント（環境変数が未設定なら undefined のままにしておく）
+// SES クライアント
 const ses =
   process.env.AWS_REGION &&
   process.env.AWS_ACCESS_KEY_ID &&
@@ -57,43 +57,30 @@ const ses =
 function generateOrderNumber() {
   const now = new Date();
   const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
   const rand = Math.floor(Math.random() * 10000)
     .toString()
-    .padStart(4, '0');
+    .padStart(4, "0");
   return `GS-${y}${m}${d}-${rand}`;
 }
 
 // 金額フォーマット（カンマ区切り）
 function yen(amount: number) {
-  return amount.toLocaleString('ja-JP');
+  return amount.toLocaleString("ja-JP");
 }
 
-// メール本文テンプレート（送り先情報つき）
+// メール本文テンプレート
 function buildOrderEmailBody(order: MockOrder): string {
   const now = new Date();
-  const orderedAt = now.toLocaleString('ja-JP', {
-  timeZone: 'Asia/Tokyo',
-});
+  const orderedAt = now.toLocaleString("ja-JP");
 
-  const shippingInfoLines = [
-    `郵便番号・住所：`,
-    `  ${order.shippingPostalAndAddress || '（未入力）'}`,
-    ``,
-    `お届け先氏名：`,
-    `  ${order.shippingRecipientName || '（未入力）'}`,
-    ``,
-    `運送会社と連絡が取れる電話番号：`,
-    `  ${order.shippingPhoneNumber || '（未入力）'}`,
-    ``,
-    `ご希望の到着日時：`,
-    `  ${
-      order.shippingDeliveryDate || order.shippingDeliveryTimeNote
-        ? `${order.shippingDeliveryDate ?? ''} ${order.shippingDeliveryTimeNote ?? ''}`.trim()
-        : '（未入力）'
-    }`,
-  ].join('\n');
+  const agencyLine = order.agencyName
+    ? `代理店名：${order.agencyName}`
+    : "代理店名：（未設定）";
+  const userLine = order.createdByEmail
+    ? `発注者メールアドレス：${order.createdByEmail}`
+    : "発注者メールアドレス：（未設定）";
 
   return `
 （株）グリーンサム 御中
@@ -106,6 +93,8 @@ function buildOrderEmailBody(order: MockOrder): string {
 【注文情報】
 注文ID：${order.orderNumber}
 発注日時：${orderedAt}
+${agencyLine}
+${userLine}
 
 【商品】
 1点目
@@ -120,7 +109,19 @@ function buildOrderEmailBody(order: MockOrder): string {
 ・合計金額：${yen(order.totalAmount)}円（税込）
 
 【お届け先情報】
-${shippingInfoLines}
+郵便番号・住所：
+  ${order.shippingPostalAndAddress || "（未入力）"}
+
+お届け先氏名：
+  ${order.shippingRecipientName || "（未入力）"}
+
+運送会社と連絡が取れる電話番号：
+  ${order.shippingPhoneNumber || "（未入力）"}
+
+ご希望の到着日時：
+  ${order.shippingDeliveryDate || "（未入力）"} ${
+    order.shippingDeliveryTimeNote || ""
+  }
 
 ※ 現在は試験運用中です。内容に誤りがないかご確認のうえ、
 　ご対応いただけますと幸いです。
@@ -142,12 +143,12 @@ async function sendOrderEmail(order: MockOrder) {
   const mode = getMailMode();
 
   if (!ses) {
-    console.warn('[ORDER EMAIL] SES client is not configured. Skip sending.');
+    console.warn("[ORDER EMAIL] SES client is not configured. Skip sending.");
     return;
   }
 
-  if (mode === 'disabled') {
-    console.log('[ORDER EMAIL] Mail mode is disabled. Skip sending.');
+  if (mode === "disabled") {
+    console.log("[ORDER EMAIL] Mail mode is disabled. Skip sending.");
     return;
   }
 
@@ -156,27 +157,26 @@ async function sendOrderEmail(order: MockOrder) {
   const ccCommon = process.env.ORDER_CC_EMAIL;
 
   if (!from) {
-    console.warn('[ORDER EMAIL] SES_FROM_EMAIL is not set. Skip sending.');
+    console.warn("[ORDER EMAIL] SES_FROM_EMAIL is not set. Skip sending.");
     return;
   }
 
   let toAddresses: string[] = [];
-  const ccAddresses: string[] = [];
+  let ccAddresses: string[] = [];
 
-  if (mode === 'test') {
+  if (mode === "test") {
     const testTo = ccCommon || from;
     if (!testTo) {
       console.warn(
-        '[ORDER EMAIL] No test recipient (ORDER_CC_EMAIL or FROM). Skip sending.'
+        "[ORDER EMAIL] No test recipient (ORDER_CC_EMAIL or FROM). Skip sending."
       );
       return;
     }
     toAddresses = [testTo];
-    // テストモードではグリーンサムには送らない
   } else {
     if (!toProd) {
       console.warn(
-        '[ORDER EMAIL] ORDER_TO_EMAIL is not set in production mode. Skip sending.'
+        "[ORDER EMAIL] ORDER_TO_EMAIL is not set in production mode. Skip sending."
       );
       return;
     }
@@ -187,7 +187,7 @@ async function sendOrderEmail(order: MockOrder) {
   }
 
   let subject = `【いちご新規オーダー】${order.product.name} / ${order.quantity}シート`;
-  if (mode === 'test') {
+  if (mode === "test") {
     subject = `[TEST] ${subject}`;
   }
 
@@ -198,11 +198,11 @@ async function sendOrderEmail(order: MockOrder) {
       CcAddresses: ccAddresses,
     },
     Message: {
-      Subject: { Data: subject, Charset: 'UTF-8' },
+      Subject: { Data: subject, Charset: "UTF-8" },
       Body: {
         Text: {
           Data: buildOrderEmailBody(order),
-          Charset: 'UTF-8',
+          Charset: "UTF-8",
         },
       },
     },
@@ -210,14 +210,14 @@ async function sendOrderEmail(order: MockOrder) {
 
   try {
     const res = await ses.send(command);
-    console.log('[ORDER EMAIL] Sent successfully', {
+    console.log("[ORDER EMAIL] Sent successfully", {
       MessageId: res.MessageId,
       mode,
       to: toAddresses,
       cc: ccAddresses,
     });
   } catch (err) {
-    console.error('[ORDER EMAIL] Failed to send', err);
+    console.error("[ORDER EMAIL] Failed to send", err);
   }
 }
 
@@ -227,7 +227,18 @@ export function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as {
+      productId: string;
+      quantity: number;
+      postalAndAddress?: string;
+      recipientName?: string;
+      phoneNumber?: string;
+      deliveryDate?: string;
+      deliveryTimeNote?: string;
+      agencyName?: string;
+      createdByEmail?: string;
+    };
+
     const {
       productId,
       quantity,
@@ -236,26 +247,20 @@ export async function POST(req: Request) {
       phoneNumber,
       deliveryDate,
       deliveryTimeNote,
-    } = body as {
-      productId: string;
-      quantity: number;
-      postalAndAddress?: string;
-      recipientName?: string;
-      phoneNumber?: string;
-      deliveryDate?: string;
-      deliveryTimeNote?: string;
-    };
+      agencyName,
+      createdByEmail,
+    } = body;
 
-    if (!productId || typeof quantity !== 'number') {
+    if (!productId || typeof quantity !== "number") {
       return NextResponse.json(
-        { error: '商品とセット数は必須です。' },
+        { error: "商品とセット数は必須です。" },
         { status: 400 }
       );
     }
 
     if (quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
-        { error: 'セット数は1以上の偶数で入力してください。' },
+        { error: "セット数は1以上の偶数で入力してください。" },
         { status: 400 }
       );
     }
@@ -264,15 +269,15 @@ export async function POST(req: Request) {
 
     if (!product) {
       return NextResponse.json(
-        { error: '商品が見つかりません。' },
+        { error: "商品が見つかりません。" },
         { status: 400 }
       );
     }
 
     // 冬いちごだけ4の倍数チェック
-    if (product.season === 'winter' && quantity % 4 !== 0) {
+    if (product.season === "winter" && quantity % 4 !== 0) {
       return NextResponse.json(
-        { error: '冬いちごは4の倍数で発注してください。' },
+        { error: "冬いちごは4の倍数で発注してください。" },
         { status: 400 }
       );
     }
@@ -292,19 +297,19 @@ export async function POST(req: Request) {
       subtotalExTax,
       taxAmount,
       totalAmount,
-      status: 'pending',
+      status: "pending",
       createdAt: new Date().toISOString(),
-      shippingPostalAndAddress: postalAndAddress ?? '',
-      shippingRecipientName: recipientName ?? '',
-      shippingPhoneNumber: phoneNumber ?? '',
-      shippingDeliveryDate: deliveryDate ?? '',
-      shippingDeliveryTimeNote: deliveryTimeNote ?? '',
+      agencyName: agencyName || "",
+      createdByEmail: createdByEmail || "",
+      shippingPostalAndAddress: postalAndAddress ?? "",
+      shippingRecipientName: recipientName ?? "",
+      shippingPhoneNumber: phoneNumber ?? "",
+      shippingDeliveryDate: deliveryDate ?? "",
+      shippingDeliveryTimeNote: deliveryTimeNote ?? "",
     };
 
-    // メモリDBに保存（モック用）
     ORDERS = [order, ...ORDERS];
 
-    // メール送信（失敗しても注文自体は受け付ける）
     await sendOrderEmail(order);
 
     return NextResponse.json(
@@ -314,7 +319,7 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error(e);
     return NextResponse.json(
-      { error: '予期せぬエラーが発生しました。' },
+      { error: "予期せぬエラーが発生しました。" },
       { status: 500 }
     );
   }
