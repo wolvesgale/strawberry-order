@@ -20,7 +20,7 @@ export type MockOrder = {
   createdAt: string;
 };
 
-// メモリ上のモック注文一覧
+// メモリ上に保持するモック注文リスト
 const orders: MockOrder[] = [];
 
 function generateId(): string {
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as any;
     console.log("[MOCK ORDER BODY]", body);
 
-    // ===== いちごの種類（商品） =====
+    // ===== いちごの種類（productName） =====
     const rawProduct =
       body.product ??
       body.selectedProduct ??
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     if (typeof rawProduct === "string") {
       productName = rawProduct.trim();
     } else if (rawProduct && typeof rawProduct === "object") {
-      // product: { name, label, id, ... } を想定
+      // product: { name / label / id ... } など何でも拾う
       const candidate =
         rawProduct.name ??
         rawProduct.label ??
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ★ ここを「必須バリデーション」から「フォールバック」に変更
+    // ★ ここで必須チェックはせず、未取得なら固定文言にフォールバック
     if (!productName) {
       productName = "商品名未設定";
     }
