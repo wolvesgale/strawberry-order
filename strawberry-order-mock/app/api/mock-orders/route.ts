@@ -230,15 +230,14 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as {
       productId: string;
       quantity: number;
-      postalAndAddress?: string;
-      recipientName?: string;
-      phoneNumber?: string;
+      postalAndAddress: string;
+      recipientName: string;
+      phoneNumber: string;
       deliveryDate: string;
-      deliveryTimeNote?: string;
+      deliveryTimeNote: string;
       piecesPerSheet: number;
       agencyName?: string | null;
       createdByEmail?: string | null;
-      deliveryAddress?: string;
     };
 
     const {
@@ -252,10 +251,7 @@ export async function POST(req: Request) {
       piecesPerSheet,
       agencyName,
       createdByEmail,
-      deliveryAddress,
     } = body;
-
-    const combinedAddress = postalAndAddress ?? deliveryAddress;
 
     if (!productId || typeof quantity !== 'number') {
       return NextResponse.json(
@@ -286,6 +282,13 @@ export async function POST(req: Request) {
     }
 
     if (!piecesPerSheet || !deliveryDate || !combinedAddress) {
+      return NextResponse.json(
+        { error: '玉数、到着希望日、納品先住所は必須です。' },
+        { status: 400 }
+      );
+    }
+
+    if (!piecesPerSheet || !deliveryDate || !postalAndAddress) {
       return NextResponse.json(
         { error: '玉数、到着希望日、納品先住所は必須です。' },
         { status: 400 }
@@ -338,7 +341,7 @@ export async function POST(req: Request) {
       quantity,
       piecesPerSheet,
       deliveryDate,
-      deliveryAddress: combinedAddress,
+      deliveryAddress: postalAndAddress,
       status: 'pending',
       createdAt: new Date().toISOString(),
       agencyName: agencyName || "",

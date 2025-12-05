@@ -250,6 +250,26 @@ export default function OrderPage() {
             </p>
           </div>
 
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-200">
+              玉数（1シートあたり）<span className="ml-1 text-rose-400">必須</span>
+            </label>
+            <select
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+              value={piecesPerSheet}
+              onChange={(e) => setPiecesPerSheet(Number(e.target.value))}
+              required
+            >
+              <option value={36}>36玉</option>
+              <option value={30}>30玉</option>
+              <option value={24}>24玉</option>
+              <option value={20}>20玉</option>
+            </select>
+            <p className="text-xs text-slate-400">
+              1シートあたりの玉数を選択してください。
+            </p>
+          </div>
+
   return (
     <main className="min-h-screen bg-slate-900 text-slate-100 px-4 py-8">
       <div className="max-w-3xl mx-auto space-y-8">
@@ -314,9 +334,9 @@ export default function OrderPage() {
             disabled={submitting}
             className="w-full rounded-md bg-red-600 text-white text-sm font-semibold py-2 hover:bg-red-500 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            管理画面（モック）へ
-          </Link>
-        </header>
+            {submitting ? '送信中...' : '発注する（モック）'}
+          </button>
+        </form>
 
         {error && (
           <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
