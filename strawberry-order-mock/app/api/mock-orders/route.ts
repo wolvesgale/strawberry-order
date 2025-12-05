@@ -45,16 +45,36 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as any;
 
-    // ▼ ここがポイント：いろんなキー名で来ても拾う
+    // ===== いちごの種類（商品） =====
+    // いろんなキー名・型で来ても受け付ける
     const rawProduct =
-      body.productId ??
       body.product ??
+      body.selectedProduct ??
+      body.productId ??
       body.productName ??
       body.strawberryType ??
       body.strawberry;
 
-    const productName =
-      typeof rawProduct === "string" ? rawProduct.trim() : "";
+    let productName = "";
+
+    if (typeof rawProduct === "string") {
+      productName = rawProduct.trim();
+    } else if (rawProduct && typeof rawProduct === "object") {
+      // product: { name, id, label, ... } などを想定
+      const candidate =
+        rawProduct.name ??
+        rawProduct.label ??
+        rawProduct.text ??
+        rawProduct.title ??
+        rawProduct.id;
+
+      if (
+        typeof candidate === "string" ||
+        typeof candidate === "number"
+      ) {
+        productName = String(candidate).trim();
+      }
+    }
 
     if (!productName) {
       return NextResponse.json(
@@ -63,11 +83,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1シートあたりの玉数
+    // ===== 1シートあたりの玉数 =====
+    const piecesRaw =
+      body.piecesPerSheet ??
+      body.pieces_per_sheet ??
+      body.pieces ??
+      body.ballsPerSheet;
+
     const piecesPerSheet =
-      typeof body.piecesPerSheet === "number"
-        ? body.piecesPerSheet
-        : Number(body.piecesPerSheet);
+      typeof piecesRaw === "number" ? piecesRaw : Number(piecesRaw);
 
     if (![36, 30, 24, 20].includes(piecesPerSheet)) {
       return NextResponse.json(
@@ -79,9 +103,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // シート数（偶数チェック）
+    // ===== セット数（シート数） =====
+    const quantityRaw =
+      body.quantity ?? body.sheetCount ?? body.sets ?? body.count;
     const quantity =
-      typeof body.quantity === "number" ? body.quantity : Number(body.quantity);
+      typeof quantityRaw === "number" ? quantityRaw : Number(quantityRaw);
 
     if (!Number.isInteger(quantity) || quantity < 2 || quantity % 2 !== 0) {
       return NextResponse.json(
@@ -90,13 +116,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // お届け先情報
+    // 冬いちごだけ 4 の倍数チェック（文言に合わせておく）
+    if (productName.includes("冬") && quantity % 4 !== 0) {
+      return NextResponse.json(
+        { error: "冬いちごは4の倍数で入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    // ===== お届け先情報 =====
     const postalAndAddress =
       typeof body.postalAndAddress === "string"
         ? body.postalAndAddress.trim()
         : "";
     const recipientName =
-      typeof body.recipientName === "string" ? body.recipientName.trim() : "";
+      typeof body.recipientName === "string"
+        ? body.recipientName.trim()
+        : "";
     const phoneNumber =
       typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : "";
 
@@ -107,7 +143,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 到着希望日（3日後以降）
+    // ===== 到着希望日（3日後以降） =====
     const deliveryDate =
       typeof body.deliveryDate === "string" ? body.deliveryDate : "";
 
@@ -173,7 +209,7 @@ export async function POST(request: NextRequest) {
       createdAt: now.toISOString(),
     };
 
-    // 先頭に追加（新しい順）
+    // 新しい順に先頭へ
     orders.unshift(order);
 
     console.log("[MOCK ORDER CREATED]", order);
