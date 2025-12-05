@@ -37,16 +37,15 @@ function getMinDeliveryDate(): Date {
 }
 
 export async function GET() {
-  // 管理画面・代理店画面用に、モック注文一覧をそのまま返す
   return NextResponse.json({ orders });
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as any;
+    console.log("[MOCK ORDER BODY]", body);
 
     // ===== いちごの種類（商品） =====
-    // いろんなキー名・型で来ても受け付ける
     const rawProduct =
       body.product ??
       body.selectedProduct ??
@@ -60,7 +59,7 @@ export async function POST(request: NextRequest) {
     if (typeof rawProduct === "string") {
       productName = rawProduct.trim();
     } else if (rawProduct && typeof rawProduct === "object") {
-      // product: { name, id, label, ... } などを想定
+      // product: { name, label, id, ... } を想定
       const candidate =
         rawProduct.name ??
         rawProduct.label ??
@@ -76,11 +75,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ★ ここを「必須バリデーション」から「フォールバック」に変更
     if (!productName) {
-      return NextResponse.json(
-        { error: "いちごの種類を選択してください。" },
-        { status: 400 }
-      );
+      productName = "商品名未設定";
     }
 
     // ===== 1シートあたりの玉数 =====
@@ -116,7 +113,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 冬いちごだけ 4 の倍数チェック（文言に合わせておく）
+    // 冬いちごだけ 4 の倍数チェック
     if (productName.includes("冬") && quantity % 4 !== 0) {
       return NextResponse.json(
         { error: "冬いちごは4の倍数で入力してください。" },
@@ -209,7 +206,6 @@ export async function POST(request: NextRequest) {
       createdAt: now.toISOString(),
     };
 
-    // 新しい順に先頭へ
     orders.unshift(order);
 
     console.log("[MOCK ORDER CREATED]", order);
