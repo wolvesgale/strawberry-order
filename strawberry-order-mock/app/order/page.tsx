@@ -1,13 +1,25 @@
 // app/order/page.tsx
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, FormEvent } from "react";
+import Link from "next/link";
 
-type Product = {
+type MockProduct = {
   id: string;
   name: string;
-  season: 'summer' | 'summer_autumn' | 'winter';
+  season: "summer" | "winter";
   unitPrice: number;
+  taxRate: number;
+};
+
+type OrderState = "idle" | "submitting" | "success" | "error";
+
+type ShippingForm = {
+  postalAndAddress: string;
+  recipientName: string;
+  phoneNumber: string;
+  deliveryDate: string;
+  deliveryTimeNote: string;
 };
 
 export default function OrderPage() {
@@ -20,17 +32,29 @@ export default function OrderPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
 
+  // 商品一覧取得
   useEffect(() => {
-    const load = async () => {
-      const res = await fetch('/api/mock-products');
-      const data = await res.json();
-      setProducts(data.products);
-      if (data.products.length > 0) {
-        setProductId(data.products[0].id);
+    async function fetchProducts() {
+      try {
+        const res = await fetch("/api/mock-products", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error("商品一覧の取得に失敗しました。");
+        }
+        const json = await res.json();
+        const list = (json.products ?? []) as MockProduct[];
+        setProducts(list);
+        if (list.length > 0) {
+          setSelectedProductId(list[0].id);
+        }
+      } catch (e: any) {
+        console.error(e);
+        setError(e.message ?? "商品一覧の取得に失敗しました。");
       }
-    };
-    load();
+    }
+
+    fetchProducts();
   }, []);
 
   const today = new Date();
@@ -41,11 +65,27 @@ export default function OrderPage() {
   );
   const minDateStr = minDate.toISOString().slice(0, 10);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+
+    if (!selectedProductId) {
+      setError("商品を選択してください。");
+      return;
+    }
+
+    if (quantity <= 0 || quantity % 2 !== 0) {
+      setError("セット数は1以上の偶数で入力してください。");
+      return;
+    }
+
+    if (selectedProduct?.season === "winter" && quantity % 4 !== 0) {
+      setError("冬いちごは4の倍数で発注してください。");
+      return;
+    }
+
     setError(null);
-    setMessage(null);
-    setSubmitting(true);
+    setOrderState("submitting");
+    setOrderNumber(null);
 
     try {
       const selectedDate = new Date(deliveryDate);
@@ -68,20 +108,11 @@ export default function OrderPage() {
         }),
       });
 
-      const data = await res.json();
+      const json = await res.json();
 
       if (!res.ok) {
-        setError(data.error ?? '発注に失敗しました。');
-      } else {
-        setMessage(`ご注文を受け付けました。注文ID：${data.orderNumber}`);
+        throw new Error(json.error ?? "発注に失敗しました。");
       }
-    } catch (err) {
-      console.error(err);
-      setError('通信エラーが発生しました。');
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   return (
     <main className="min-h-screen bg-slate-950">
@@ -136,6 +167,10 @@ export default function OrderPage() {
             </p>
           </div>
 
+  return (
+    <main className="min-h-screen bg-slate-900 text-slate-100 px-4 py-8">
+      <div className="max-w-3xl mx-auto space-y-8">
+        <header className="flex items-center justify-between">
           <div>
             <label className="block mb-1 text-sm font-medium text-slate-100">
               セット数
@@ -196,9 +231,9 @@ export default function OrderPage() {
             disabled={submitting}
             className="w-full rounded-md bg-red-600 text-white text-sm font-semibold py-2 hover:bg-red-500 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {submitting ? '送信中...' : '発注する（モック）'}
-          </button>
-        </form>
+            管理画面（モック）へ
+          </Link>
+        </header>
 
         {message && (
           <p className="text-sm text-emerald-100 bg-emerald-900/40 border border-emerald-700 rounded-md px-3 py-2">
@@ -208,7 +243,7 @@ export default function OrderPage() {
         {error && (
           <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
             {error}
-          </p>
+          </div>
         )}
 
         <div className="text-right">
