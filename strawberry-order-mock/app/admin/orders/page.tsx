@@ -10,52 +10,23 @@ type Season = "summer" | "autumn" | "winter";
 
 type MockProduct = {
   id: string;
-  name: string;
-  season: Season;
-  unitPrice: number;
-  taxRate: number;
+  orderNumber: string;
+  product: {
+    name: string;
+    season: string;
+  };
+  quantity: number;
+  piecesPerSheet: number;
+  deliveryDate: string;
+  deliveryAddress: string;
+  status: 'pending' | 'shipped' | 'canceled';
+  createdAt: string;
 };
 
-type OrderState = "idle" | "submitting" | "success" | "error";
-
-export default function OrderPage() {
-  const [products, setProducts] = useState<MockProduct[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState<string>("");
-  const [quantity, setQuantity] = useState<number>(4);
-  const [postalAndAddress, setPostalAndAddress] = useState("");
-  const [recipientName, setRecipientName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [deliveryDate, setDeliveryDate] = useState("");
-  const [deliveryTimeNote, setDeliveryTimeNote] = useState("");
-  const [orderState, setOrderState] = useState<OrderState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const [agencyName, setAgencyName] = useState<string>("");
-  const [userEmail, setUserEmail] = useState<string>("");
-
-  // 商品マスタ取得
-  useEffect(() => {
-    async function fetchProducts() {
-      try {
-        const res = await fetch("/api/mock-products");
-        if (!res.ok) {
-          throw new Error("商品マスタの取得に失敗しました。");
-        }
-        const json = await res.json();
-        const list = (json.products ?? []) as MockProduct[];
-        setProducts(list);
-
-        if (list.length > 0) {
-          setSelectedProductId(list[0].id);
-        }
-      } catch (e: any) {
-        console.error(e);
-        setErrorMessage(e.message ?? "商品マスタ取得時にエラーが発生しました。");
-      }
-    }
-
-    fetchProducts();
-  }, []);
+export default function AdminOrdersPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [role] = useState<'admin' | 'agency'>('admin');
 
   // ログインユーザーの代理店情報取得
   useEffect(() => {
@@ -149,53 +120,80 @@ export default function OrderPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-900 text-slate-100 px-4 py-8">
-      <div className="max-w-xl mx-auto space-y-6">
-        <header className="space-y-2">
-          <h1 className="text-2xl font-bold">いちご発注フォーム（代理店用）</h1>
-          <p className="text-sm text-slate-400">
-            グリーンサム向けのいちご発注を登録します。
-          </p>
-
-          <div className="flex flex-wrap gap-2 text-xs text-slate-300 mt-2">
-            {agencyName && (
-              <span className="inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1">
-                代理店：{agencyName}
-              </span>
-            )}
-            {userEmail && (
-              <span className="inline-flex items-center rounded-full bg-slate-800/80 px-3 py-1">
-                ログインメール：{userEmail}
-              </span>
-            )}
+    <main className="min-h-screen bg-slate-950">
+      <div className="max-w-4xl mx-auto px-4 py-8 space-y-4">
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-slate-50">注文一覧（モック）</h1>
+            <p className="text-xs text-slate-400">
+              /order から発注したテストデータがここに一覧で表示されます。
+            </p>
           </div>
-
-          <div className="flex flex-wrap gap-2 mt-2">
+          <div className="flex items-center gap-3">
+            {role === 'admin' && (
+              <a
+                href="/admin/users"
+                className="inline-flex items-center rounded-md border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+              >
+                ユーザー管理へ
+              </a>
+            )}
             <a
-              href="/agency/orders"
-              className="text-xs text-indigo-300 hover:text-indigo-100 underline"
+              href="/order"
+              className="text-xs text-slate-300 underline hover:text-slate-100"
             >
-              自分の発注履歴を見る
-            </a>
-            <a
-              href="/admin/orders"
-              className="text-xs text-slate-400 hover:text-slate-200 underline"
-            >
-              （管理者の場合）注文一覧へ
+              発注フォームへ
             </a>
           </div>
         </header>
 
-        {orderState === "success" && (
-          <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-            発注を受付けました。メールが送信されているかご確認ください。
-            <button
-              type="button"
-              onClick={resetForm}
-              className="ml-4 inline-flex items-center rounded-md border border-emerald-500/60 px-3 py-1 text-xs hover:bg-emerald-500/20"
-            >
-              続けて発注する
-            </button>
+        {loading ? (
+          <p className="text-sm text-slate-400">読み込み中...</p>
+        ) : orders.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            まだ注文がありません。/order からテスト発注してみてください。
+          </p>
+        ) : (
+          <div className="overflow-x-auto bg-slate-900 border border-slate-700 rounded-xl shadow-sm">
+            <table className="min-w-full text-xs text-slate-100">
+              <thead className="bg-slate-800 text-slate-100">
+                <tr>
+                  <th className="text-left px-3 py-2">注文ID</th>
+                  <th className="text-left px-3 py-2">商品</th>
+                  <th className="text-right px-3 py-2">玉数</th>
+                  <th className="text-right px-3 py-2">セット数</th>
+                  <th className="text-left px-3 py-2">到着希望日</th>
+                  <th className="text-left px-3 py-2">ステータス</th>
+                  <th className="text-left px-3 py-2">受付日時</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id} className="border-t border-slate-800">
+                    <td className="px-3 py-2 font-mono text-[10px] text-slate-300">
+                      {o.orderNumber}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-100">{o.product.name}</div>
+                      <div className="text-[10px] text-slate-400">{o.product.season}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right">{o.piecesPerSheet}玉</td>
+                    <td className="px-3 py-2 text-right">{o.quantity}</td>
+                    <td className="px-3 py-2 text-[10px] text-slate-300 whitespace-nowrap">
+                      {o.deliveryDate}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-100">
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-[10px] text-slate-400 whitespace-nowrap">
+                      {new Date(o.createdAt).toLocaleString('ja-JP')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
