@@ -45,7 +45,6 @@ export default function OrderPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const session: { user?: { email?: string } } | null = null;
 
   // min 日付を計算（本日から 3 日後）
   useEffect(() => {
@@ -96,22 +95,6 @@ export default function OrderPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-
-    if (!selectedProductId) {
-      setError("商品を選択してください。");
-      return;
-    }
-
-    if (quantity <= 0 || quantity % 2 !== 0) {
-      setError("セット数は1以上の偶数で入力してください。");
-      return;
-    }
-
-    if (selectedProduct?.season === "winter" && quantity % 4 !== 0) {
-      setError("冬いちごは4の倍数で発注してください。");
-      return;
-    }
-
     setError(null);
     setMessage(null);
 
@@ -151,19 +134,9 @@ export default function OrderPage() {
       setError("ご希望の到着日を選択してください。");
       return;
     }
-    if (minDeliveryDate) {
-      const minDateValue = new Date(minDeliveryDate);
-      const selectedDateValue = new Date(deliveryDate);
-
-      if (Number.isNaN(selectedDateValue.getTime())) {
-        setError("到着希望日が正しく入力されていません。");
-        return;
-      }
-
-      if (selectedDateValue < minDateValue) {
-        setError(`到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`);
-        return;
-      }
+    if (minDeliveryDate && deliveryDate < minDeliveryDate) {
+      setError(`到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`);
+      return;
     }
 
     setSubmitting(true);
@@ -388,7 +361,7 @@ export default function OrderPage() {
         {error && (
           <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
             {error}
-          </div>
+          </p>
         )}
       </div>
     </main>
