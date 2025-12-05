@@ -9,9 +9,9 @@ type MockOrder = {
   orderNumber: string;
   product: MockProduct;
   quantity: number; // セット数
-  subtotalExTax: number;
-  taxAmount: number;
-  totalAmount: number;
+  piecesPerSheet: number;
+  deliveryDate: string;
+  deliveryAddress: string;
   status: MockOrderStatus;
   createdAt: string; // ISO
 };
@@ -38,14 +38,24 @@ export function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { productId, quantity } = body as {
+    const { productId, quantity, piecesPerSheet, deliveryDate, deliveryAddress } = body as {
       productId?: string;
       quantity?: number;
+      piecesPerSheet?: number;
+      deliveryDate?: string;
+      deliveryAddress?: string;
     };
 
     if (!productId || typeof quantity !== 'number') {
       return NextResponse.json(
         { error: '商品とセット数は必須です。' },
+        { status: 400 }
+      );
+    }
+
+    if (!piecesPerSheet || !deliveryDate || !deliveryAddress) {
+      return NextResponse.json(
+        { error: '玉数、到着希望日、納品先住所は必須です。' },
         { status: 400 }
       );
     }
@@ -74,21 +84,29 @@ export async function POST(req: Request) {
       );
     }
 
-    const unitPrice = product.unitPrice;
-    const taxRate = product.taxRate;
+    const today = new Date();
+    const minDate = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + 3,
+    );
+    const selectedDate = new Date(deliveryDate);
 
-    const subtotalExTax = unitPrice * quantity;
-    const taxAmount = Math.round(subtotalExTax * taxRate);
-    const totalAmount = subtotalExTax + taxAmount;
+    if (selectedDate < minDate) {
+      return NextResponse.json(
+        { error: '到着希望日は本日から3日後以降の日付を選択してください。' },
+        { status: 400 },
+      );
+    }
 
     const order: MockOrder = {
       id: crypto.randomUUID(),
       orderNumber: generateOrderNumber(),
       product,
       quantity,
-      subtotalExTax,
-      taxAmount,
-      totalAmount,
+      piecesPerSheet,
+      deliveryDate,
+      deliveryAddress,
       status: 'pending',
       createdAt: new Date().toISOString(),
     };
