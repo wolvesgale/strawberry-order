@@ -1,6 +1,7 @@
 // app/order/page.tsx
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 type Product = {
@@ -14,6 +15,9 @@ export default function OrderPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productId, setProductId] = useState('');
   const [quantity, setQuantity] = useState(2);
+  const [piecesPerSheet, setPiecesPerSheet] = useState<number>(36);
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +34,13 @@ export default function OrderPage() {
     load();
   }, []);
 
-  const selectedProduct = products.find((p) => p.id === productId);
+  const today = new Date();
+  const minDate = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() + 3,
+  );
+  const minDateStr = minDate.toISOString().slice(0, 10);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,10 +49,24 @@ export default function OrderPage() {
     setSubmitting(true);
 
     try {
+      const selectedDate = new Date(deliveryDate);
+
+      if (!deliveryDate || selectedDate < minDate) {
+        setError('到着希望日は本日から3日後以降の日付を選択してください。');
+        setSubmitting(false);
+        return;
+      }
+
       const res = await fetch('/api/mock-orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, quantity }),
+        body: JSON.stringify({
+          productId,
+          quantity,
+          piecesPerSheet,
+          deliveryDate,
+          deliveryAddress,
+        }),
       });
 
       const data = await res.json();
@@ -61,24 +85,42 @@ export default function OrderPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-slate-950">
       <div className="max-w-md mx-auto px-4 py-8 space-y-6">
-        <header className="space-y-2">
-          <h1 className="text-2xl font-bold text-slate-900">
-            いちご発注フォーム（モック）
-          </h1>
-          <p className="text-sm text-slate-600">
-            商品とセット数だけ入力して発注テストができます。
-          </p>
+        <header className="max-w-3xl mx-auto mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-50">
+              発注フォーム（モック）
+            </h1>
+            <p className="mt-1 text-sm text-slate-400">
+              テスト用の発注フォームです。送信するとSES経由でメール送信されます。
+            </p>
+          </div>
+
+          <Link
+            href="/admin/orders"
+            className="mt-3 sm:mt-0 inline-flex items-center text-xs font-medium text-sky-300 hover:text-sky-100 underline underline-offset-4"
+          >
+            管理画面（モック）へ
+          </Link>
         </header>
 
-        <form onSubmit={handleSubmit} className="space-y-4 bg-white rounded-xl shadow px-4 py-5">
+        {message && (
+          <p className="max-w-3xl mx-auto mb-4 text-sm text-emerald-100 bg-emerald-900/40 border border-emerald-700 rounded-md px-3 py-2">
+            {message}
+          </p>
+        )}
+
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 bg-slate-900 border border-slate-700 rounded-xl shadow-sm px-4 py-5"
+        >
           <div>
-            <label className="block mb-1 text-sm font-medium text-slate-800">
+            <label className="block mb-1 text-sm font-medium text-slate-100">
               商品
             </label>
             <select
-              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
             >
@@ -88,58 +130,97 @@ export default function OrderPage() {
                 </option>
               ))}
             </select>
-            {selectedProduct && (
-              <p className="mt-1 text-xs text-slate-500">
-                単価：{selectedProduct.unitPrice.toLocaleString()}円（税抜） / セット
-              </p>
-            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-200">
+              玉数（1シートあたり）<span className="ml-1 text-rose-400">必須</span>
+            </label>
+            <select
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+              value={piecesPerSheet}
+              onChange={(e) => setPiecesPerSheet(Number(e.target.value))}
+              required
+            >
+              <option value={36}>36玉</option>
+              <option value={30}>30玉</option>
+              <option value={24}>24玉</option>
+              <option value={20}>20玉</option>
+            </select>
+            <p className="text-xs text-slate-400">
+              1シートあたりの玉数を選択してください。
+            </p>
           </div>
 
           <div>
-            <label className="block mb-1 text-sm font-medium text-slate-800">
+            <label className="block mb-1 text-sm font-medium text-slate-100">
               セット数
             </label>
             <input
               type="number"
               min={2}
               step={2}
-              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
             />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-400">
               ※ 基本は偶数。冬いちごは4の倍数が必要です。
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-100">
+              到着希望日<span className="ml-1 text-rose-400">必須</span>
+            </label>
+            <input
+              type="date"
+              min={minDateStr}
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              required
+            />
+            <p className="text-xs text-slate-400">
+              本日から3日後以降の日付のみ選択できます。
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-100">
+              納品先住所<span className="ml-1 text-rose-400">必須</span>
+            </label>
+            <textarea
+              className="w-full bg-slate-900 border border-slate-600 rounded-md px-3 py-2 text-sm text-slate-50 placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+              rows={3}
+              value={deliveryAddress}
+              onChange={(e) => setDeliveryAddress(e.target.value)}
+              placeholder="例）454-0012 名古屋市中川区XXXXX"
+              required
+            />
+            <p className="text-xs text-slate-400">
+              名古屋市以降をマスキングした例です。施設名などもご記入ください。
+            </p>
+          </div>
+
+          <div className="rounded-md border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-slate-200">
+            選択した玉数とセット数で発注します。金額計算は行いません。
           </div>
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-md bg-red-600 text-white text-sm font-semibold py-2 disabled:opacity-50"
+            className="w-full rounded-md bg-red-600 text-white text-sm font-semibold py-2 hover:bg-red-500 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? '送信中...' : '発注する（モック）'}
           </button>
         </form>
 
-        {message && (
-          <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-            {message}
-          </p>
-        )}
         {error && (
-          <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+          <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
             {error}
           </p>
         )}
-
-        <div className="text-right">
-          <a
-            href="/admin/orders"
-            className="text-xs text-slate-600 underline hover:text-slate-900"
-          >
-            管理画面（モック）へ
-          </a>
-        </div>
       </div>
     </main>
   );
