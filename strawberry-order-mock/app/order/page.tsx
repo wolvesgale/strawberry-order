@@ -151,9 +151,19 @@ export default function OrderPage() {
       setError("ご希望の到着日を選択してください。");
       return;
     }
-    if (minDeliveryDate && deliveryDate < minDeliveryDate) {
-      setError(`到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`);
-      return;
+    if (minDeliveryDate) {
+      const minDateValue = new Date(minDeliveryDate);
+      const selectedDateValue = new Date(deliveryDate);
+
+      if (Number.isNaN(selectedDateValue.getTime())) {
+        setError("到着希望日が正しく入力されていません。");
+        return;
+      }
+
+      if (selectedDateValue < minDateValue) {
+        setError(`到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`);
+        return;
+      }
     }
 
     setSubmitting(true);
