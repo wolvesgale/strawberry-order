@@ -3,77 +3,162 @@ import { NextRequest, NextResponse } from "next/server";
 
 type OrderStatus = "pending" | "shipped" | "canceled";
 
-type MockOrder = {
+export type MockOrder = {
   id: string;
   orderNumber: string;
-  productId: string;
   productName: string;
-  piecesPerSheet: number;
+  piecesPerSheet: number | null;
   quantity: number;
   postalAndAddress: string;
   recipientName: string;
   phoneNumber: string;
-  deliveryDate: string;
-  deliveryTimeNote?: string | null;
-  agencyName?: string | null;
-  createdByEmail?: string | null;
+  deliveryDate: string | null;
+  deliveryTimeNote: string | null;
+  agencyName: string | null;
+  createdByEmail: string | null;
   status: OrderStatus;
   createdAt: string;
 };
 
-type PostBody = {
-  productId: string;
-  productName: string;
-  piecesPerSheet: number;
-  quantity: number;
-  postalAndAddress: string;
-  recipientName: string;
-  phoneNumber: string;
-  deliveryDate: string;
-  deliveryTimeNote?: string;
-  agencyName?: string | null;
-  createdByEmail?: string | null;
-};
+// メモリ上のモック注文一覧
+const orders: MockOrder[] = [];
 
-const ALLOWED_PIECES = [36, 30, 24, 20];
-
-// メモリ上のモック注文データ
-let mockOrders: MockOrder[] = [];
-let orderSeq = 1;
-
-function generateOrderNumber() {
-  const now = new Date();
-  const yyyy = String(now.getFullYear());
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const seq = String(orderSeq++).padStart(3, "0");
-  return `ORD-${yyyy}${mm}${dd}-${seq}`;
+function generateId(): string {
+  return `${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 }
 
-function isValidDeliveryDate(deliveryDate: string): boolean {
-  const selected = new Date(deliveryDate);
-  if (Number.isNaN(selected.getTime())) return false;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const minDate = new Date(today);
-  minDate.setDate(minDate.getDate() + 3); // 3日後以降
-
-  return selected >= minDate;
+function getMinDeliveryDate(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + 3);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-// GET: 注文一覧（管理画面・代理店画面で使用）
 export async function GET() {
-  return NextResponse.json({ orders: mockOrders });
+  // 管理画面・代理店画面用に、モック注文一覧をそのまま返す
+  return NextResponse.json({ orders });
 }
 
-// POST: 新規注文（モック）
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as PostBody;
+    const body = (await request.json()) as any;
 
-    const {
-      productId,
+    // ▼ ここがポイント：いろんなキー名で来ても拾う
+    const rawProduct =
+      body.productId ??
+      body.product ??
+      body.productName ??
+      body.strawberryType ??
+      body.strawberry;
+
+    const productName =
+      typeof rawProduct === "string" ? rawProduct.trim() : "";
+
+    if (!productName) {
+      return NextResponse.json(
+        { error: "いちごの種類を選択してください。" },
+        { status: 400 }
+      );
+    }
+
+    // 1シートあたりの玉数
+    const piecesPerSheet =
+      typeof body.piecesPerSheet === "number"
+        ? body.piecesPerSheet
+        : Number(body.piecesPerSheet);
+
+    if (![36, 30, 24, 20].includes(piecesPerSheet)) {
+      return NextResponse.json(
+        {
+          error:
+            "1シートあたりの玉数は36玉 / 30玉 / 24玉 / 20玉から選択してください。",
+        },
+        { status: 400 }
+      );
+    }
+
+    // シート数（偶数チェック）
+    const quantity =
+      typeof body.quantity === "number" ? body.quantity : Number(body.quantity);
+
+    if (!Number.isInteger(quantity) || quantity < 2 || quantity % 2 !== 0) {
+      return NextResponse.json(
+        { error: "セット数（シート数）は2以上の偶数で入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    // お届け先情報
+    const postalAndAddress =
+      typeof body.postalAndAddress === "string"
+        ? body.postalAndAddress.trim()
+        : "";
+    const recipientName =
+      typeof body.recipientName === "string" ? body.recipientName.trim() : "";
+    const phoneNumber =
+      typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : "";
+
+    if (!postalAndAddress || !recipientName || !phoneNumber) {
+      return NextResponse.json(
+        { error: "お届け先情報（住所・氏名・電話番号）を入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    // 到着希望日（3日後以降）
+    const deliveryDate =
+      typeof body.deliveryDate === "string" ? body.deliveryDate : "";
+
+    if (!deliveryDate) {
+      return NextResponse.json(
+        { error: "ご希望の到着日を選択してください。" },
+        { status: 400 }
+      );
+    }
+
+    const parsedDelivery = new Date(deliveryDate);
+    if (Number.isNaN(parsedDelivery.getTime())) {
+      return NextResponse.json(
+        { error: "到着日の形式が正しくありません。" },
+        { status: 400 }
+      );
+    }
+
+    const minDate = getMinDeliveryDate();
+    if (parsedDelivery < minDate) {
+      return NextResponse.json(
+        {
+          error:
+            "到着希望日は本日から3日後以降の日付を選択してください。",
+        },
+        { status: 400 }
+      );
+    }
+
+    const deliveryTimeNote =
+      typeof body.deliveryTimeNote === "string"
+        ? body.deliveryTimeNote.trim()
+        : null;
+
+    const agencyName =
+      typeof body.agencyName === "string" ? body.agencyName.trim() : null;
+
+    const createdByEmail =
+      typeof body.createdByEmail === "string"
+        ? body.createdByEmail.trim()
+        : null;
+
+    const now = new Date();
+
+    const order: MockOrder = {
+      id: generateId(),
+      orderNumber: `MOCK-${now.getFullYear()}${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(
+        orders.length + 1
+      ).padStart(4, "0")}`,
       productName,
       piecesPerSheet,
       quantity,
@@ -84,132 +169,14 @@ export async function POST(request: NextRequest) {
       deliveryTimeNote,
       agencyName,
       createdByEmail,
-    } = body;
-
-    // --- バリデーション ---
-
-    if (!productId || !productName) {
-      return NextResponse.json(
-        { error: "いちごの種類を選択してください。" },
-        { status: 400 }
-      );
-    }
-
-    if (!ALLOWED_PIECES.includes(piecesPerSheet)) {
-      return NextResponse.json(
-        {
-          error:
-            "玉数/シートは 36・30・24・20 のいずれかから選択してください。",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!quantity || quantity <= 0 || !Number.isInteger(quantity)) {
-      return NextResponse.json(
-        { error: "シート数は1以上の整数で入力してください。" },
-        { status: 400 }
-      );
-    }
-
-    // 既存仕様：シート数は「偶数」固定
-    if (quantity % 2 !== 0) {
-      return NextResponse.json(
-        { error: "シート数は偶数（2, 4, 6, ...）で入力してください。" },
-        { status: 400 }
-      );
-    }
-
-    if (!postalAndAddress || !postalAndAddress.trim()) {
-      return NextResponse.json(
-        { error: "お届け先住所を入力してください。" },
-        { status: 400 }
-      );
-    }
-
-    if (!recipientName || !recipientName.trim()) {
-      return NextResponse.json(
-        { error: "受取人のお名前を入力してください。" },
-        { status: 400 }
-      );
-    }
-
-    if (!phoneNumber || !phoneNumber.trim()) {
-      return NextResponse.json(
-        { error: "携帯電話番号を入力してください。" },
-        { status: 400 }
-      );
-    }
-
-    if (!deliveryDate) {
-      return NextResponse.json(
-        { error: "到着希望日を選択してください。" },
-        { status: 400 }
-      );
-    }
-
-    if (!isValidDeliveryDate(deliveryDate)) {
-      return NextResponse.json(
-        {
-          error:
-            "到着希望日は本日から3日後以降の日付を選択してください。",
-        },
-        { status: 400 }
-      );
-    }
-
-    // --- 注文オブジェクト作成 ---
-
-    const now = new Date();
-    const order: MockOrder = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-      orderNumber: generateOrderNumber(),
-      productId,
-      productName,
-      piecesPerSheet,
-      quantity,
-      postalAndAddress: postalAndAddress.trim(),
-      recipientName: recipientName.trim(),
-      phoneNumber: phoneNumber.trim(),
-      deliveryDate,
-      deliveryTimeNote: deliveryTimeNote?.trim() || null,
-      agencyName: agencyName ?? null,
-      createdByEmail: createdByEmail ?? null,
       status: "pending",
       createdAt: now.toISOString(),
     };
 
-    mockOrders.unshift(order);
+    // 先頭に追加（新しい順）
+    orders.unshift(order);
 
-    // --- モック用ログ（メール送信イメージ）---
-
-    const mailText = `
-【モック注文受付のお知らせ】
-
-以下の内容でご注文（モック）が登録されました。
-
-＜ご注文内容＞
-・商品：${order.productName}
-・玉数/シート：${order.piecesPerSheet}玉
-・シート数：${order.quantity}シート
-
-＜お届け先＞
-・住所：${order.postalAndAddress}
-・お名前：${order.recipientName}
-・携帯：${order.phoneNumber}
-
-＜お届け希望＞
-・到着希望日：${order.deliveryDate}
-・時間帯メモ：${order.deliveryTimeNote ?? "（指定なし）"}
-
-＜代理店・発注者＞
-・代理店名：${order.agencyName ?? "（未設定）"}
-・発注者メール：${order.createdByEmail ?? "（未設定）"}
-
-※本メールは動作確認用の「モック注文」です。実際の出荷は行われません。
-`.trim();
-
-    console.log("[MOCK ORDER EMAIL]", mailText);
+    console.log("[MOCK ORDER CREATED]", order);
 
     return NextResponse.json({ ok: true, order });
   } catch (error) {
