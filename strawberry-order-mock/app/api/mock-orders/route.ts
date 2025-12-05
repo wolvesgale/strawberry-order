@@ -295,6 +295,13 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!piecesPerSheet || !deliveryDate || !postalAndAddress) {
+      return NextResponse.json(
+        { error: '玉数、到着希望日、納品先住所は必須です。' },
+        { status: 400 }
+      );
+    }
+
     if (quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
         { error: "セット数は1以上の偶数で入力してください。" },
