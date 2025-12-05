@@ -1,5 +1,8 @@
 // app/api/mock-orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { sendOrderEmail } from "@/lib/ses";
+
+export const runtime = "nodejs";
 
 type OrderStatus = "pending" | "shipped" | "canceled";
 
@@ -59,7 +62,6 @@ export async function POST(request: NextRequest) {
     if (typeof rawProduct === "string") {
       productName = rawProduct.trim();
     } else if (rawProduct && typeof rawProduct === "object") {
-      // product: { name / label / id ... } など何でも拾う
       const candidate =
         rawProduct.name ??
         rawProduct.label ??
@@ -67,15 +69,11 @@ export async function POST(request: NextRequest) {
         rawProduct.title ??
         rawProduct.id;
 
-      if (
-        typeof candidate === "string" ||
-        typeof candidate === "number"
-      ) {
+      if (typeof candidate === "string" || typeof candidate === "number") {
         productName = String(candidate).trim();
       }
     }
 
-    // ★ ここで必須チェックはせず、未取得なら固定文言にフォールバック
     if (!productName) {
       productName = "商品名未設定";
     }
@@ -209,6 +207,53 @@ export async function POST(request: NextRequest) {
     orders.unshift(order);
 
     console.log("[MOCK ORDER CREATED]", order);
+
+    // ===== ここからメール送信ロジック =====
+    const mailMode = process.env.ORDER_MAIL_MODE ?? "mock";
+
+    const mailTextLines = [
+      "いちご発注が登録されました。",
+      "",
+      `注文番号：${order.orderNumber}`,
+      "",
+      "【商品情報】",
+      `いちごの種類：${order.productName}`,
+      `玉数/シート：${order.piecesPerSheet ?? "-"} 玉`,
+      `シート数　　：${order.quantity} シート`,
+      "",
+      "【お届け先】",
+      `郵便番号・住所：${order.postalAndAddress}`,
+      `お届け先氏名　：${order.recipientName}`,
+      `電話番号　　　：${order.phoneNumber}`,
+      "",
+      "【到着希望】",
+      `希望到着日　　：${order.deliveryDate}`,
+      `時間帯・メモ　：${order.deliveryTimeNote || "-"}`,
+      "",
+      "【発注者】",
+      `メールアドレス：${order.createdByEmail || "-"}`,
+    ];
+
+    const mailText = mailTextLines.join("\n");
+    const subject = `【モック】いちご発注受付 (${order.orderNumber})`;
+
+    try {
+      if (mailMode === "ses") {
+        const fallbackTo = order.createdByEmail ?? undefined;
+
+        await sendOrderEmail({
+          subject,
+          bodyText: mailText,
+          to: fallbackTo,
+          cc: [],
+        });
+      } else {
+        console.log("[MOCK ORDER EMAIL]", { subject, mailText });
+      }
+    } catch (err) {
+      console.error("[SES SEND ERROR]", err);
+      // メールが失敗しても発注自体は成功扱い
+    }
 
     return NextResponse.json({ ok: true, order });
   } catch (error) {
