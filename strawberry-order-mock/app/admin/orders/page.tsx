@@ -1,9 +1,14 @@
 // app/admin/orders/page.tsx
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabase } from "../../../lib/supabaseClient";
 
-type Order = {
+type OrderStatus = "pending" | "shipped" | "canceled";
+
+type AdminOrder = {
   id: string;
   orderNumber: string;
   product: {
@@ -19,19 +24,68 @@ type Order = {
 };
 
 export default function AdminOrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const router = useRouter();
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [role] = useState<'admin' | 'agency'>('admin');
 
   useEffect(() => {
-    const load = async () => {
-      const res = await fetch('/api/mock-orders');
-      const data = await res.json();
-      setOrders(data.orders);
-      setLoading(false);
-    };
-    load();
-  }, []);
+    async function init() {
+      try {
+        setError(null);
+
+        // ① ログインチェック
+        const { data, error } = await supabase.auth.getUser();
+        if (error) {
+          console.error("Supabase auth error", error);
+        }
+        if (!data?.user) {
+          router.push("/login");
+          return;
+        }
+
+        // ② 注文一覧取得
+        const res = await fetch("/api/mock-orders", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error("注文一覧の取得に失敗しました。");
+        }
+
+        const json = await res.json();
+        const apiOrders = (json.orders ?? []) as any[];
+
+        const mapped: AdminOrder[] = apiOrders.map((o) => ({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          productName: o.productName ?? o.product?.name ?? "",
+          piecesPerSheet: o.piecesPerSheet ?? null,
+          quantity: o.quantity ?? 0,
+          postalAndAddress: o.postalAndAddress ?? "",
+          recipientName: o.recipientName ?? "",
+          phoneNumber: o.phoneNumber ?? "",
+          deliveryDate: o.deliveryDate ?? null,
+          deliveryTimeNote: o.deliveryTimeNote ?? null,
+          agencyName: o.agencyName ?? null,
+          createdByEmail: o.createdByEmail ?? null,
+          status: (o.status as OrderStatus) ?? "pending",
+          createdAt: o.createdAt ?? o.created_at ?? "",
+        }));
+
+        setOrders(mapped);
+      } catch (e: any) {
+        console.error(e);
+        setError(e.message ?? "エラーが発生しました。");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    init();
+  }, [router]);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   return (
     <main className="min-h-screen bg-slate-950">
@@ -106,10 +160,9 @@ export default function AdminOrdersPage() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </main>
   );

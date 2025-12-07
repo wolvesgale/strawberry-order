@@ -1,10 +1,12 @@
 // app/api/mock-orders/route.ts
-import { NextResponse } from 'next/server';
-import { MOCK_PRODUCTS, MockProduct } from '../mock-products/route';
+import { NextRequest, NextResponse } from "next/server";
+import { sendOrderEmail } from "@/lib/ses";
 
-type MockOrderStatus = 'pending' | 'shipped' | 'canceled';
+export const runtime = "nodejs";
 
-type MockOrder = {
+type OrderStatus = "pending" | "shipped" | "canceled";
+
+export type MockOrder = {
   id: string;
   orderNumber: string;
   product: MockProduct;
@@ -18,26 +20,27 @@ type MockOrder = {
   createdAt: string; // ISO
 };
 
-// メモリ上の「なんちゃってDB」
-let ORDERS: MockOrder[] = [];
+// メモリ上に保持するモック注文リスト
+const orders: MockOrder[] = [];
 
-// ランダムな注文番号生成（あとで本実装時に差し替え）
-function generateOrderNumber() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  const rand = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, '0');
-  return `GS-${y}${m}${d}-${rand}`;
+function generateId(): string {
+  return `${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 }
 
-export function GET() {
-  return NextResponse.json({ orders: ORDERS });
+function getMinDeliveryDate(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + 3);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-export async function POST(req: Request) {
+export async function GET() {
+  return NextResponse.json({ orders });
+}
+
+export async function POST(request: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       productId: string;
@@ -67,7 +70,14 @@ export async function POST(req: Request) {
 
     if (!productId || typeof quantity !== 'number') {
       return NextResponse.json(
-        { error: '商品とセット数は必須です。' },
+        { error: "セット数（シート数）は2以上の偶数で入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    if (!piecesPerSheet || !deliveryDate || !postalAndAddress) {
+      return NextResponse.json(
+        { error: '玉数、到着希望日、納品先住所は必須です。' },
         { status: 400 }
       );
     }
@@ -81,24 +91,45 @@ export async function POST(req: Request) {
 
     if (quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
-        { error: 'セット数は1以上の偶数で入力してください。' },
+        { error: "冬いちごは4の倍数で入力してください。" },
         { status: 400 }
       );
     }
 
-    const product = MOCK_PRODUCTS.find((p) => p.id === productId);
+    // ===== お届け先情報 =====
+    const postalAndAddress =
+      typeof body.postalAndAddress === "string"
+        ? body.postalAndAddress.trim()
+        : "";
+    const recipientName =
+      typeof body.recipientName === "string"
+        ? body.recipientName.trim()
+        : "";
+    const phoneNumber =
+      typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : "";
 
-    if (!product) {
+    if (!postalAndAddress || !recipientName || !phoneNumber) {
       return NextResponse.json(
-        { error: '商品が見つかりません。' },
+        { error: "お届け先情報（住所・氏名・電話番号）を入力してください。" },
         { status: 400 }
       );
     }
 
-    // 冬いちごだけ4の倍数チェック
-    if (product.season === 'winter' && quantity % 4 !== 0) {
+    // ===== 到着希望日（3日後以降） =====
+    const deliveryDate =
+      typeof body.deliveryDate === "string" ? body.deliveryDate : "";
+
+    if (!deliveryDate) {
       return NextResponse.json(
-        { error: '冬いちごは4の倍数で発注してください。' },
+        { error: "ご希望の到着日を選択してください。" },
+        { status: 400 }
+      );
+    }
+
+    const parsedDelivery = new Date(deliveryDate);
+    if (Number.isNaN(parsedDelivery.getTime())) {
+      return NextResponse.json(
+        { error: "到着日の形式が正しくありません。" },
         { status: 400 }
       );
     }
@@ -126,9 +157,14 @@ export async function POST(req: Request) {
     const safeAgencyName = agencyName?.trim() || '代理店名未設定';
 
     const order: MockOrder = {
-      id: crypto.randomUUID(),
-      orderNumber: generateOrderNumber(),
-      product,
+      id: generateId(),
+      orderNumber: `MOCK-${now.getFullYear()}${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(
+        orders.length + 1
+      ).padStart(4, "0")}`,
+      productName,
+      piecesPerSheet,
       quantity,
       piecesPerSheet,
       deliveryDate,
@@ -139,7 +175,26 @@ export async function POST(req: Request) {
       createdAt: createdAtIso,
     };
 
-    ORDERS = [order, ...ORDERS];
+    orders.unshift(order);
+
+    console.log("[MOCK ORDER CREATED]", order);
+
+    // ===== ここからメール送信ロジック =====
+    const mailMode = process.env.ORDER_MAIL_MODE ?? "mock";
+
+    const mailText = `以下の内容で発注を受付しました。\n\n` +
+      `注文番号: ${order.orderNumber}\n` +
+      `商品: ${product.name}\n` +
+      `玉数(1シート): ${piecesPerSheet}玉\n` +
+      `セット数: ${quantity}セット\n` +
+      `お届け先: ${postalAndAddress}\n` +
+      `到着希望日: ${deliveryDate}\n` +
+      `時間帯などのご希望: ${deliveryTimeNote || '-'}\n\n` +
+      `代理店名: ${safeAgencyName}\n` +
+      `発注者メール: ${createdByEmail || '-'}\n` +
+      `受付日時: ${createdAtDate.toLocaleString('ja-JP')}\n`;
+
+    const subject = `【モック】いちご発注受付（${safeAgencyName} / ${createdAtDateOnly}）`;
 
     const mailText = `以下の内容で発注を受付しました。\n\n` +
       `注文番号: ${order.orderNumber}\n` +
@@ -162,11 +217,11 @@ export async function POST(req: Request) {
       body: mailText,
     });
 
-    return NextResponse.json({ orderNumber: order.orderNumber }, { status: 201 });
-  } catch (e) {
-    console.error(e);
+    return NextResponse.json({ ok: true, order });
+  } catch (error) {
+    console.error("[POST /api/mock-orders] error", error);
     return NextResponse.json(
-      { error: '予期せぬエラーが発生しました。' },
+      { error: "注文の登録中にエラーが発生しました。" },
       { status: 500 }
     );
   }
