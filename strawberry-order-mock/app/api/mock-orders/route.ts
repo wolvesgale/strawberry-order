@@ -1,8 +1,8 @@
 // app/api/mock-orders/route.ts
-import { NextResponse } from 'next/server';
-import { MOCK_PRODUCTS, MockProduct } from '../mock-products/route';
+import { NextRequest, NextResponse } from "next/server";
+import { sendOrderEmail } from "@/lib/ses";
 
-type MockOrderStatus = 'pending' | 'shipped' | 'canceled';
+export const runtime = "nodejs";
 
 const ORDER_NUMBER_PREFIX = 'ORD';
 
@@ -39,11 +39,13 @@ function generateOrderNumber(createdAtIso: string) {
   return `${ORDER_NUMBER_PREFIX}-${datePart}-${seq}`;
 }
 
-export function GET() {
-  return NextResponse.json({ orders: ORDERS });
+const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
+
+export async function GET() {
+  return NextResponse.json({ orders });
 }
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       productId: string;
@@ -73,7 +75,10 @@ export async function POST(req: Request) {
 
     if (!productId || typeof quantity !== 'number') {
       return NextResponse.json(
-        { error: '商品とセット数は必須です。' },
+        {
+          error:
+            "1シートあたりの玉数は36玉 / 30玉 / 24玉 / 20玉から選択してください。",
+        },
         { status: 400 }
       );
     }
@@ -87,24 +92,45 @@ export async function POST(req: Request) {
 
     if (quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
-        { error: 'セット数は1以上の偶数で入力してください。' },
+        { error: "セット数（シート数）は2以上の偶数で入力してください。" },
         { status: 400 }
       );
     }
 
-    const product = MOCK_PRODUCTS.find((p) => p.id === productId);
-
-    if (!product) {
+    // 冬いちごだけ 4 の倍数チェック
+    if (productName.includes("冬") && quantity % 4 !== 0) {
       return NextResponse.json(
-        { error: '商品が見つかりません。' },
+        { error: "冬いちごは4の倍数で入力してください。" },
         { status: 400 }
       );
     }
 
-    // 冬いちごだけ4の倍数チェック
-    if (product.season === 'winter' && quantity % 4 !== 0) {
+    // ===== お届け先情報 =====
+    const postalAndAddress =
+      typeof body.postalAndAddress === "string"
+        ? body.postalAndAddress.trim()
+        : "";
+    const recipientName =
+      typeof body.recipientName === "string"
+        ? body.recipientName.trim()
+        : "";
+    const phoneNumber =
+      typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : "";
+
+    if (!postalAndAddress || !recipientName || !phoneNumber) {
       return NextResponse.json(
-        { error: '冬いちごは4の倍数で発注してください。' },
+        { error: "お届け先情報（住所・氏名・電話番号）を入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    // ===== 到着希望日（3日後以降） =====
+    const deliveryDate =
+      typeof body.deliveryDate === "string" ? body.deliveryDate : "";
+
+    if (!deliveryDate) {
+      return NextResponse.json(
+        { error: "ご希望の到着日を選択してください。" },
         { status: 400 }
       );
     }
@@ -145,7 +171,20 @@ export async function POST(req: Request) {
       createdAt: createdAtIso,
     };
 
-    ORDERS = [order, ...ORDERS];
+    orders.unshift(order);
+
+    console.log("[MOCK ORDER CREATED]", order);
+
+    // ===== ここからメール送信（仕入れ先向け・金額なし） =====
+    const agencyLabel =
+      order.agencyName && order.agencyName.trim().length > 0
+        ? order.agencyName.trim()
+        : "代理店名未設定";
+
+    const orderDateStr = order.createdAt.slice(0, 10); // YYYY-MM-DD
+
+    // 件名：代理店名 + 発注日（※「モック」表記や単価は出さない）
+    const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
     const mailText = `以下の内容で発注を受付しました。\n\n` +
       `注文番号: ${order.orderNumber}\n` +
@@ -168,11 +207,11 @@ export async function POST(req: Request) {
       body: mailText,
     });
 
-    return NextResponse.json({ orderNumber: order.orderNumber }, { status: 201 });
-  } catch (e) {
-    console.error(e);
+    return NextResponse.json({ ok: true, order });
+  } catch (error) {
+    console.error("[POST /api/mock-orders] error", error);
     return NextResponse.json(
-      { error: '予期せぬエラーが発生しました。' },
+      { error: "注文の登録中にエラーが発生しました。" },
       { status: 500 }
     );
   }
