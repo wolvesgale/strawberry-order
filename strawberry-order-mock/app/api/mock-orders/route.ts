@@ -9,18 +9,21 @@ type OrderStatus = "pending" | "shipped" | "canceled";
 export type MockOrder = {
   id: string;
   orderNumber: string;
-  product: MockProduct;
-  quantity: number; // セット数
-  piecesPerSheet: number;
-  deliveryDate: string;
-  deliveryAddress: string;
-  agencyName: string;
-  createdByEmail?: string | null;
-  status: MockOrderStatus;
-  createdAt: string; // ISO
+  productName: string;
+  piecesPerSheet: number | null;
+  quantity: number;
+  postalAndAddress: string;
+  recipientName: string;
+  phoneNumber: string;
+  deliveryDate: string | null;
+  deliveryTimeNote: string | null;
+  agencyName: string | null;
+  createdByEmail: string | null;
+  status: OrderStatus;
+  createdAt: string;
 };
 
-// メモリ上に保持するモック注文リスト
+// ひとまずメモリ上で保持（本番では Supabase などに差し替え予定）
 const orders: MockOrder[] = [];
 
 function generateId(): string {
@@ -29,6 +32,7 @@ function generateId(): string {
     .slice(2, 8)}`;
 }
 
+// 本日から 3 日後 0:00
 function getMinDeliveryDate(): Date {
   const d = new Date();
   d.setDate(d.getDate() + 3);
@@ -36,60 +40,82 @@ function getMinDeliveryDate(): Date {
   return d;
 }
 
+const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
+
 export async function GET() {
   return NextResponse.json({ orders });
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await req.json().catch(() => ({}))) as {
-      productId: string;
-      quantity: number;
-      postalAndAddress: string;
-      recipientName: string;
-      phoneNumber: string;
-      deliveryDate: string;
-      deliveryTimeNote: string;
-      piecesPerSheet: number;
-      agencyName?: string | null;
-      createdByEmail?: string | null;
-    };
+    const body = (await request.json()) as any;
+    console.log("[MOCK ORDER BODY]", body);
 
-    const {
-      productId,
-      quantity,
-      postalAndAddress,
-      recipientName,
-      phoneNumber,
-      deliveryDate,
-      deliveryTimeNote,
-      piecesPerSheet,
-      agencyName,
-      createdByEmail,
-    } = body;
+    // ===== いちごの種類（productName） =====
+    const rawProduct =
+      body.product ??
+      body.selectedProduct ??
+      body.productId ??
+      body.productName ??
+      body.strawberryType ??
+      body.strawberry;
 
-    if (!productId || typeof quantity !== 'number') {
+    let productName = "";
+
+    if (typeof rawProduct === "string") {
+      productName = rawProduct.trim();
+    } else if (rawProduct && typeof rawProduct === "object") {
+      const candidate =
+        rawProduct.name ??
+        rawProduct.label ??
+        rawProduct.text ??
+        rawProduct.title ??
+        rawProduct.id;
+
+      if (typeof candidate === "string" || typeof candidate === "number") {
+        productName = String(candidate).trim();
+      }
+    }
+
+    if (!productName) {
+      productName = "商品名未設定";
+    }
+
+    // ===== 1シートあたりの玉数 =====
+    const piecesRaw =
+      body.piecesPerSheet ??
+      body.pieces_per_sheet ??
+      body.pieces ??
+      body.ballsPerSheet;
+
+    const piecesPerSheet =
+      typeof piecesRaw === "number" ? piecesRaw : Number(piecesRaw);
+
+    if (![36, 30, 24, 20].includes(piecesPerSheet)) {
+      return NextResponse.json(
+        {
+          error:
+            "1シートあたりの玉数は36玉 / 30玉 / 24玉 / 20玉から選択してください。",
+        },
+        { status: 400 }
+      );
+    }
+
+    // ===== セット数（シート数） =====
+    const quantityRaw =
+      body.quantity ?? body.sheetCount ?? body.sets ?? body.count;
+    const quantity =
+      typeof quantityRaw === "number" ? quantityRaw : Number(quantityRaw);
+
+    if (!Number.isInteger(quantity) || quantity < 2 || quantity % 2 !== 0) {
       return NextResponse.json(
         { error: "セット数（シート数）は2以上の偶数で入力してください。" },
         { status: 400 }
       );
     }
 
-    if (!piecesPerSheet || !deliveryDate || !postalAndAddress) {
-      return NextResponse.json(
-        { error: '玉数、到着希望日、納品先住所は必須です。' },
-        { status: 400 }
-      );
-    }
-
-    if (!piecesPerSheet || !deliveryDate || !postalAndAddress) {
-      return NextResponse.json(
-        { error: '玉数、到着希望日、納品先住所は必須です。' },
-        { status: 400 }
-      );
-    }
-
-    if (quantity <= 0 || quantity % 2 !== 0) {
+    // 冬いちごだけ 4 の倍数チェック
+    if (productName.includes("冬") && quantity % 4 !== 0) {
       return NextResponse.json(
         { error: "冬いちごは4の倍数で入力してください。" },
         { status: 400 }
@@ -134,27 +160,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const today = new Date();
-    const minDate = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() + 3,
-    );
-    const selectedDate = new Date(deliveryDate);
-
-    if (selectedDate < minDate) {
+    const minDate = getMinDeliveryDate();
+    if (parsedDelivery < minDate) {
       return NextResponse.json(
-        { error: '到着希望日は本日から3日後以降の日付を選択してください。' },
-        { status: 400 },
+        {
+          error:
+            "到着希望日は本日から3日後以降の日付を選択してください。",
+        },
+        { status: 400 }
       );
     }
 
-    const createdAtDate = new Date();
-    const createdAtIso = createdAtDate.toISOString();
-    const createdAtDateOnly = !Number.isNaN(createdAtDate.getTime())
-      ? createdAtIso.slice(0, 10)
-      : '-';
-    const safeAgencyName = agencyName?.trim() || '代理店名未設定';
+    const deliveryTimeNote =
+      typeof body.deliveryTimeNote === "string"
+        ? body.deliveryTimeNote.trim()
+        : null;
+
+    const agencyName =
+      typeof body.agencyName === "string" ? body.agencyName.trim() : null;
+
+    const createdByEmail =
+      typeof body.createdByEmail === "string"
+        ? body.createdByEmail.trim()
+        : null;
+
+    const now = new Date();
 
     const order: MockOrder = {
       id: generateId(),
@@ -166,63 +196,30 @@ export async function POST(request: NextRequest) {
       productName,
       piecesPerSheet,
       quantity,
-      piecesPerSheet,
+      postalAndAddress,
+      recipientName,
+      phoneNumber,
       deliveryDate,
-      deliveryAddress: postalAndAddress,
-      agencyName: safeAgencyName,
-      createdByEmail: createdByEmail ?? null,
-      status: 'pending',
-      createdAt: createdAtIso,
+      deliveryTimeNote,
+      agencyName,
+      createdByEmail,
+      status: "pending",
+      createdAt: now.toISOString(),
     };
 
     orders.unshift(order);
 
     console.log("[MOCK ORDER CREATED]", order);
 
-    // ===== メール件名・本文の組み立て（単価は一切入れない） =====
-    const agencyLabel = order.agencyName?.trim() || "代理店名未設定";
-    const createdDate = new Date(order.createdAt);
-    const yyyy = createdDate.getFullYear();
-    const mm = String(createdDate.getMonth() + 1).padStart(2, "0");
-    const dd = String(createdDate.getDate()).padStart(2, "0");
-    const orderDateStr = `${yyyy}-${mm}-${dd}`;
+    // ===== ここからメール送信（仕入れ先向け・金額なし） =====
+    const agencyLabel =
+      order.agencyName && order.agencyName.trim().length > 0
+        ? order.agencyName.trim()
+        : "代理店名未設定";
 
-<<<<<<< Updated upstream
-    const mailText = `以下の内容で発注を受付しました。\n\n` +
-      `注文番号: ${order.orderNumber}\n` +
-      `商品: ${product.name}\n` +
-      `玉数(1シート): ${piecesPerSheet}玉\n` +
-      `セット数: ${quantity}セット\n` +
-      `お届け先: ${postalAndAddress}\n` +
-      `到着希望日: ${deliveryDate}\n` +
-      `時間帯などのご希望: ${deliveryTimeNote || '-'}\n\n` +
-      `代理店名: ${safeAgencyName}\n` +
-      `発注者メール: ${createdByEmail || '-'}\n` +
-      `受付日時: ${createdAtDate.toLocaleString('ja-JP')}\n`;
+    const orderDateStr = order.createdAt.slice(0, 10); // YYYY-MM-DD
 
-    const subject = `【モック】いちご発注受付（${safeAgencyName} / ${createdAtDateOnly}）`;
-
-    const mailText = `以下の内容で発注を受付しました。\n\n` +
-      `注文番号: ${order.orderNumber}\n` +
-      `商品: ${product.name}\n` +
-      `玉数(1シート): ${piecesPerSheet}玉\n` +
-      `セット数: ${quantity}セット\n` +
-      `お届け先: ${postalAndAddress}\n` +
-      `到着希望日: ${deliveryDate}\n` +
-      `時間帯などのご希望: ${deliveryTimeNote || '-'}\n\n` +
-      `代理店名: ${safeAgencyName}\n` +
-      `発注者メール: ${createdByEmail || '-'}\n` +
-      `受付日時: ${createdAtDate.toLocaleString('ja-JP')}\n`;
-
-    const subject = `いちご発注受付（${safeAgencyName} / ${createdAtDateOnly}）`;
-
-    // 本番ではここでSES等でメール送信する
-    console.log('[MOCK EMAIL] 発注メール送信:', {
-      to: 'greensum@example.com',
-      subject,
-      body: mailText,
-    });
-=======
+    // 件名：代理店名 + 発注日（※「モック」表記や単価は出さない）
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
     const mailLines: string[] = [];
@@ -234,50 +231,40 @@ export async function POST(request: NextRequest) {
     mailLines.push("【商品情報】");
     mailLines.push(`いちごの種類：${order.productName}`);
     mailLines.push(
-      `玉数/シート：${
-        order.piecesPerSheet != null ? order.piecesPerSheet : "-"
-      }玉`
+      `玉数/シート：${order.piecesPerSheet ?? "-"}玉`
     );
-    mailLines.push(`シート数　：${order.quantity}シート`);
+    mailLines.push(`シート数：${order.quantity}シート`);
     mailLines.push("");
     mailLines.push("【お届け先】");
     mailLines.push(`郵便番号・住所：${order.postalAndAddress}`);
-    mailLines.push(`お届け先氏名　：${order.recipientName}`);
-    mailLines.push(`電話番号　　　：${order.phoneNumber}`);
+    mailLines.push(`お届け先氏名：${order.recipientName}`);
+    mailLines.push(`電話番号：${order.phoneNumber}`);
     mailLines.push("");
     mailLines.push("【到着希望】");
-    mailLines.push(`希望到着日　：${order.deliveryDate ?? "-"}`);
+    mailLines.push(`希望到着日：${order.deliveryDate ?? "-"}`);
     mailLines.push(`時間帯・メモ：${order.deliveryTimeNote ?? "-"}`);
     mailLines.push("");
     mailLines.push("【発注者】");
+    mailLines.push(`代理店名：${order.agencyName ?? "-"}`);
     mailLines.push(`メールアドレス：${order.createdByEmail ?? "-"}`);
 
-    const mailText = mailLines.join("\n");
+    const bodyText = mailLines.join("\n");
 
-    const mode = process.env.ORDER_MAIL_MODE ?? "mock";
-
-    if (mode === "ses") {
+    if (ORDER_MAIL_MODE === "ses") {
       try {
-        await sendOrderEmail({
-          subject,
-          bodyText: mailText,
-        });
-        console.log("[SES] 発注メール送信:", {
-          subject,
-          to: process.env.ORDER_TO_EMAIL,
-          agencyName: order.agencyName,
+        await sendOrderEmail({ subject, bodyText });
+        console.log("[SES] Order mail sent", {
           orderNumber: order.orderNumber,
         });
-      } catch (e) {
-        console.error("[SES] 発注メール送信エラー", e);
+      } catch (err) {
+        console.error("[SES] Failed to send order mail", err);
       }
     } else {
       console.log("[MOCK EMAIL] 発注メール送信:", {
         subject,
-        bodyText: mailText,
+        bodyText,
       });
     }
->>>>>>> Stashed changes
 
     return NextResponse.json({ ok: true, order });
   } catch (error) {
