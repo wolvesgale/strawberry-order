@@ -179,9 +179,15 @@ export async function POST(request: NextRequest) {
 
     console.log("[MOCK ORDER CREATED]", order);
 
-    // ===== ここからメール送信ロジック =====
-    const mailMode = process.env.ORDER_MAIL_MODE ?? "mock";
+    // ===== メール件名・本文の組み立て（単価は一切入れない） =====
+    const agencyLabel = order.agencyName?.trim() || "代理店名未設定";
+    const createdDate = new Date(order.createdAt);
+    const yyyy = createdDate.getFullYear();
+    const mm = String(createdDate.getMonth() + 1).padStart(2, "0");
+    const dd = String(createdDate.getDate()).padStart(2, "0");
+    const orderDateStr = `${yyyy}-${mm}-${dd}`;
 
+<<<<<<< Updated upstream
     const mailText = `以下の内容で発注を受付しました。\n\n` +
       `注文番号: ${order.orderNumber}\n` +
       `商品: ${product.name}\n` +
@@ -216,6 +222,62 @@ export async function POST(request: NextRequest) {
       subject,
       body: mailText,
     });
+=======
+    const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
+
+    const mailLines: string[] = [];
+
+    mailLines.push("いちご発注が登録されました。");
+    mailLines.push("");
+    mailLines.push(`注文番号：${order.orderNumber}`);
+    mailLines.push("");
+    mailLines.push("【商品情報】");
+    mailLines.push(`いちごの種類：${order.productName}`);
+    mailLines.push(
+      `玉数/シート：${
+        order.piecesPerSheet != null ? order.piecesPerSheet : "-"
+      }玉`
+    );
+    mailLines.push(`シート数　：${order.quantity}シート`);
+    mailLines.push("");
+    mailLines.push("【お届け先】");
+    mailLines.push(`郵便番号・住所：${order.postalAndAddress}`);
+    mailLines.push(`お届け先氏名　：${order.recipientName}`);
+    mailLines.push(`電話番号　　　：${order.phoneNumber}`);
+    mailLines.push("");
+    mailLines.push("【到着希望】");
+    mailLines.push(`希望到着日　：${order.deliveryDate ?? "-"}`);
+    mailLines.push(`時間帯・メモ：${order.deliveryTimeNote ?? "-"}`);
+    mailLines.push("");
+    mailLines.push("【発注者】");
+    mailLines.push(`メールアドレス：${order.createdByEmail ?? "-"}`);
+
+    const mailText = mailLines.join("\n");
+
+    const mode = process.env.ORDER_MAIL_MODE ?? "mock";
+
+    if (mode === "ses") {
+      try {
+        await sendOrderEmail({
+          subject,
+          bodyText: mailText,
+        });
+        console.log("[SES] 発注メール送信:", {
+          subject,
+          to: process.env.ORDER_TO_EMAIL,
+          agencyName: order.agencyName,
+          orderNumber: order.orderNumber,
+        });
+      } catch (e) {
+        console.error("[SES] 発注メール送信エラー", e);
+      }
+    } else {
+      console.log("[MOCK EMAIL] 発注メール送信:", {
+        subject,
+        bodyText: mailText,
+      });
+    }
+>>>>>>> Stashed changes
 
     return NextResponse.json({ ok: true, order });
   } catch (error) {
