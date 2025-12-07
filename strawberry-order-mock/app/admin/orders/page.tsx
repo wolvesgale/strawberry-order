@@ -11,17 +11,15 @@ type OrderStatus = "pending" | "shipped" | "canceled";
 type AdminOrder = {
   id: string;
   orderNumber: string;
-  productName: string;
-  piecesPerSheet: number | null;
+  product: {
+    name: string;
+    season: string;
+  };
   quantity: number;
-  postalAndAddress: string;
-  recipientName: string;
-  phoneNumber: string;
-  deliveryDate: string | null;
-  deliveryTimeNote: string | null;
-  agencyName: string | null;
-  createdByEmail: string | null;
-  status: OrderStatus;
+  piecesPerSheet: number;
+  deliveryDate: string;
+  deliveryAddress: string;
+  status: 'pending' | 'shipped' | 'canceled';
   createdAt: string;
 };
 
@@ -29,7 +27,7 @@ export default function AdminOrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [role] = useState<'admin' | 'agency'>('admin');
 
   useEffect(() => {
     async function init() {
@@ -90,132 +88,75 @@ export default function AdminOrdersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 px-4 py-8">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <header className="flex items-center justify-between gap-4">
+    <main className="min-h-screen bg-slate-950">
+      <div className="max-w-4xl mx-auto px-4 py-8 space-y-4">
+        <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">注文一覧（管理者用モック）</h1>
-            <p className="text-sm text-slate-400">
-              代理店経由のモック注文が一覧で確認できます。
+            <h1 className="text-xl font-bold text-slate-50">注文一覧（モック）</h1>
+            <p className="text-xs text-slate-400">
+              /order から発注したテストデータがここに一覧で表示されます。
             </p>
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <Link
-              href="/admin/users"
-              className="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
+          <div className="flex items-center gap-3">
+            {role === 'admin' && (
+              <a
+                href="/admin/users"
+                className="inline-flex items-center rounded-md border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+              >
+                ユーザー管理へ
+              </a>
+            )}
+            <a
+              href="/order"
+              className="text-xs text-slate-300 underline hover:text-slate-100"
             >
-              ユーザー管理
-            </Link>
-            <Link
-              href="/agency/orders"
-              className="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-            >
-              代理店別履歴
-            </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-lg border border-red-600 px-3 py-1.5 text-red-100 hover:bg-red-900/40"
-            >
-              ログアウト
-            </button>
+              発注フォームへ
+            </a>
           </div>
         </header>
 
-        {error && (
-          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-100">
-            {error}
-          </div>
-        )}
-
-        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
-          <table className="min-w-full text-xs">
-            <thead className="bg-slate-800 text-slate-300">
-              <tr>
-                <th className="px-3 py-2 text-left">注文ID</th>
-                <th className="px-3 py-2 text-left">商品</th>
-                <th className="px-3 py-2 text-right">玉数/シート</th>
-                <th className="px-3 py-2 text-right">シート数</th>
-                <th className="px-3 py-2 text-left">お届け先</th>
-                <th className="px-3 py-2 text-left">到着希望</th>
-                <th className="px-3 py-2 text-left">代理店</th>
-                <th className="px-3 py-2 text-left">発注者</th>
-                <th className="px-3 py-2 text-center">ステータス</th>
-                <th className="px-3 py-2 text-left">受付日時</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
+        {loading ? (
+          <p className="text-sm text-slate-400">読み込み中...</p>
+        ) : orders.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            まだ注文がありません。/order からテスト発注してみてください。
+          </p>
+        ) : (
+          <div className="overflow-x-auto bg-slate-900 border border-slate-700 rounded-xl shadow-sm">
+            <table className="min-w-full text-xs text-slate-100">
+              <thead className="bg-slate-800 text-slate-100">
                 <tr>
-                  <td
-                    colSpan={10}
-                    className="px-4 py-6 text-center text-slate-400"
-                  >
-                    読み込み中です…
-                  </td>
+                  <th className="text-left px-3 py-2">注文ID</th>
+                  <th className="text-left px-3 py-2">商品</th>
+                  <th className="text-right px-3 py-2">玉数</th>
+                  <th className="text-right px-3 py-2">セット数</th>
+                  <th className="text-left px-3 py-2">到着希望日</th>
+                  <th className="text-left px-3 py-2">ステータス</th>
+                  <th className="text-left px-3 py-2">受付日時</th>
                 </tr>
-              )}
-
-              {!loading && orders.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="px-4 py-6 text-center text-slate-500"
-                  >
-                    まだ注文はありません。
-                  </td>
-                </tr>
-              )}
-
-              {!loading &&
-                orders.map((order) => (
-                  <tr
-                    key={order.id}
-                    className="border-t border-slate-800 hover:bg-slate-800/60"
-                  >
-                    <td className="px-3 py-2 align-top font-mono text-[11px]">
-                      {order.orderNumber}
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id} className="border-t border-slate-800">
+                    <td className="px-3 py-2 font-mono text-[10px] text-slate-300">
+                      {o.orderNumber}
                     </td>
-                    <td className="px-3 py-2 align-top">
-                      <div className="text-xs font-medium">
-                        {order.productName}
-                      </div>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-100">{o.product.name}</div>
+                      <div className="text-[10px] text-slate-400">{o.product.season}</div>
                     </td>
-                    <td className="px-3 py-2 align-top text-right">
-                      {order.piecesPerSheet ?? "-"}
+                    <td className="px-3 py-2 text-right">{o.piecesPerSheet}玉</td>
+                    <td className="px-3 py-2 text-right">{o.quantity}</td>
+                    <td className="px-3 py-2 text-[10px] text-slate-300 whitespace-nowrap">
+                      {o.deliveryDate}
                     </td>
-                    <td className="px-3 py-2 align-top text-right">
-                      {order.quantity}
-                    </td>
-                    <td className="px-3 py-2 align-top text-xs">
-                      <div>{order.postalAndAddress}</div>
-                      <div className="text-slate-400">
-                        {order.recipientName} / {order.phoneNumber}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 align-top text-xs">
-                      <div>{order.deliveryDate ?? "-"}</div>
-                      {order.deliveryTimeNote && (
-                        <div className="text-slate-400">
-                          {order.deliveryTimeNote}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top text-xs">
-                      {order.agencyName ?? "-"}
-                    </td>
-                    <td className="px-3 py-2 align-top text-xs">
-                      {order.createdByEmail ?? "-"}
-                    </td>
-                    <td className="px-3 py-2 align-top text-center">
-                      <span className="inline-flex items-center rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-medium text-slate-100">
-                        {order.status}
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-100">
+                        {o.status}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 align-top text-xs text-slate-400">
-                      {order.createdAt
-                        ? new Date(order.createdAt).toLocaleString("ja-JP")
-                        : "-"}
+                    <td className="px-3 py-2 text-[10px] text-slate-400 whitespace-nowrap">
+                      {new Date(o.createdAt).toLocaleString('ja-JP')}
                     </td>
                   </tr>
                 ))}

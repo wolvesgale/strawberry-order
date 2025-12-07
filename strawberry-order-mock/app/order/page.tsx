@@ -134,9 +134,19 @@ export default function OrderPage() {
       setError("ご希望の到着日を選択してください。");
       return;
     }
-    if (minDeliveryDate && deliveryDate < minDeliveryDate) {
-      setError(`到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`);
-      return;
+    if (minDeliveryDate) {
+      const minDateValue = new Date(minDeliveryDate);
+      const selectedDateValue = new Date(deliveryDate);
+
+      if (Number.isNaN(selectedDateValue.getTime())) {
+        setError("到着希望日が正しく入力されていません。");
+        return;
+      }
+
+      if (selectedDateValue < minDateValue) {
+        setError(`到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`);
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -164,7 +174,7 @@ export default function OrderPage() {
       }
 
       setMessage(
-        "発注を受け付けました。グリーンサムへの自動メール送信も完了しています。"
+        "発注を受け付けました。仕入れ先への自動メール送信も完了しています。"
       );
 
       // 入力値リセット（商品選択だけ維持）
@@ -193,7 +203,7 @@ export default function OrderPage() {
               いちご発注フォーム（代理店用）
             </h1>
             <p className="text-sm text-slate-400">
-              グリーンサム向けのいちご発注を登録します。
+              仕入れ先向けのいちご発注を登録します。
             </p>
             <p className="mt-1 text-xs text-slate-500">
               ログインメール：{sessionEmail ?? "未ログイン"}
