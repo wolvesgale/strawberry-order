@@ -9,9 +9,11 @@ type MockOrder = {
   orderNumber: string;
   product: MockProduct;
   quantity: number; // セット数
-  subtotalExTax: number;
-  taxAmount: number;
-  totalAmount: number;
+  piecesPerSheet: number;
+  deliveryDate: string;
+  deliveryAddress: string;
+  agencyName: string;
+  createdByEmail?: string | null;
   status: MockOrderStatus;
   createdAt: string; // ISO
 };
@@ -37,15 +39,42 @@ export function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { productId, quantity } = body as {
-      productId?: string;
-      quantity?: number;
+    const body = (await req.json().catch(() => ({}))) as {
+      productId: string;
+      quantity: number;
+      postalAndAddress: string;
+      recipientName: string;
+      phoneNumber: string;
+      deliveryDate: string;
+      deliveryTimeNote: string;
+      piecesPerSheet: number;
+      agencyName?: string | null;
+      createdByEmail?: string | null;
     };
+
+    const {
+      productId,
+      quantity,
+      postalAndAddress,
+      recipientName,
+      phoneNumber,
+      deliveryDate,
+      deliveryTimeNote,
+      piecesPerSheet,
+      agencyName,
+      createdByEmail,
+    } = body;
 
     if (!productId || typeof quantity !== 'number') {
       return NextResponse.json(
         { error: '商品とセット数は必須です。' },
+        { status: 400 }
+      );
+    }
+
+    if (!piecesPerSheet || !deliveryDate || !postalAndAddress) {
+      return NextResponse.json(
+        { error: '玉数、到着希望日、納品先住所は必須です。' },
         { status: 400 }
       );
     }
@@ -74,31 +103,63 @@ export async function POST(req: Request) {
       );
     }
 
-    const unitPrice = product.unitPrice;
-    const taxRate = product.taxRate;
+    const today = new Date();
+    const minDate = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + 3,
+    );
+    const selectedDate = new Date(deliveryDate);
 
-    const subtotalExTax = unitPrice * quantity;
-    const taxAmount = Math.round(subtotalExTax * taxRate);
-    const totalAmount = subtotalExTax + taxAmount;
+    if (selectedDate < minDate) {
+      return NextResponse.json(
+        { error: '到着希望日は本日から3日後以降の日付を選択してください。' },
+        { status: 400 },
+      );
+    }
+
+    const createdAtDate = new Date();
+    const createdAtIso = createdAtDate.toISOString();
+    const createdAtDateOnly = !Number.isNaN(createdAtDate.getTime())
+      ? createdAtIso.slice(0, 10)
+      : '-';
+    const safeAgencyName = agencyName?.trim() || '代理店名未設定';
 
     const order: MockOrder = {
       id: crypto.randomUUID(),
       orderNumber: generateOrderNumber(),
       product,
       quantity,
-      subtotalExTax,
-      taxAmount,
-      totalAmount,
+      piecesPerSheet,
+      deliveryDate,
+      deliveryAddress: postalAndAddress,
+      agencyName: safeAgencyName,
+      createdByEmail: createdByEmail ?? null,
       status: 'pending',
-      createdAt: new Date().toISOString(),
+      createdAt: createdAtIso,
     };
 
     ORDERS = [order, ...ORDERS];
 
+    const mailText = `以下の内容で発注を受付しました。\n\n` +
+      `注文番号: ${order.orderNumber}\n` +
+      `商品: ${product.name}\n` +
+      `玉数(1シート): ${piecesPerSheet}玉\n` +
+      `セット数: ${quantity}セット\n` +
+      `お届け先: ${postalAndAddress}\n` +
+      `到着希望日: ${deliveryDate}\n` +
+      `時間帯などのご希望: ${deliveryTimeNote || '-'}\n\n` +
+      `代理店名: ${safeAgencyName}\n` +
+      `発注者メール: ${createdByEmail || '-'}\n` +
+      `受付日時: ${createdAtDate.toLocaleString('ja-JP')}\n`;
+
+    const subject = `【モック】いちご発注受付（${safeAgencyName} / ${createdAtDateOnly}）`;
+
     // 本番ではここでSES等でメール送信する
     console.log('[MOCK EMAIL] 発注メール送信:', {
       to: 'greensum@example.com',
-      subject: `【いちご発注】${order.orderNumber} / ${product.name} x ${quantity}セット`,
+      subject,
+      body: mailText,
     });
 
     return NextResponse.json({ orderNumber: order.orderNumber }, { status: 201 });
