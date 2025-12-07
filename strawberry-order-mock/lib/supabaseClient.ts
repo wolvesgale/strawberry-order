@@ -1,27 +1,15 @@
 // lib/supabaseClient.ts
+import { createClient } from "@supabase/supabase-js";
 
-// このプロジェクトでは実際の Supabase SDK ではなく、
-// 認証チェック用の超ライトなスタブを使います。
-// 型エラーを避けるため auth.getUser / auth.signOut を用意しておく。
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = {
-  auth: {
-    async getUser() {
-      // 常に「ログイン済みユーザー」がいる想定のモック
-      return {
-        data: {
-          user: {
-            id: "mock-user-id",
-            email: "mock-user@example.com",
-          },
-        },
-        error: null,
-      } as const;
-    },
+// デモ用とはいえ、ここが空だと動かないので一応チェック
+if (!supabaseUrl) {
+  throw new Error("NEXT_PUBLIC_SUPABASE_URL is not set");
+}
+if (!supabaseAnonKey) {
+  throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is not set");
+}
 
-    async signOut() {
-      // 何もしないモック
-      return { error: null } as const;
-    },
-  },
-} as any;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
