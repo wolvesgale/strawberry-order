@@ -1,165 +1,175 @@
-// app/api/admin/users/route.ts
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
+import { NextResponse } from 'next/server';
 
-type Role = "admin" | "agency";
+type Agency = {
+  id: string;
+  name: string;
+  code: string;
+};
+
+type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'agency';
+  agencyId?: string | null;
+  createdAt: string;
+};
+
+const AGENCIES: Agency[] = [
+  { id: 'a1', name: '前田', code: 'maeda' },
+  { id: 'a2', name: '東海', code: 'tokai' },
+];
+
+const USERS: AdminUser[] = [
+  {
+    id: 'u-admin',
+    name: '管理者ユーザー',
+    email: 'admin@example.com',
+    role: 'admin',
+    agencyId: null,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'u-agency',
+    name: '代理店ユーザー',
+    email: 'agency@example.com',
+    role: 'agency',
+    agencyId: 'a1',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+function slugify(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 16) || 'agency';
+}
+
+function findOrCreateAgency(name?: string | null) {
+  const trimmed = name?.trim();
+  if (!trimmed) return null;
+
+  const existing = AGENCIES.find((a) => a.name === trimmed);
+  if (existing) return existing;
+
+  const created: Agency = {
+    id: crypto.randomUUID(),
+    name: trimmed,
+    code: slugify(trimmed),
+  };
+  AGENCIES.push(created);
+  return created;
+}
 
 export async function GET() {
-  if (!supabaseAdmin) {
-    return NextResponse.json(
-      { error: "Supabase admin client が設定されていません。" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({ agencies: AGENCIES, users: USERS });
+}
 
+export async function POST(req: Request) {
   try {
-    // auth.users
-    const { data: usersResult, error: usersError } =
-      await supabaseAdmin.auth.admin.listUsers();
+    const body = (await req.json().catch(() => ({}))) as Partial<AdminUser> & {
+      agencyId?: string | null;
+      newAgencyName?: string | null;
+    };
 
-    if (usersError) {
-      console.error("[GET /api/admin/users] listUsers error", usersError);
+    const name = body.name?.trim();
+    const email = body.email?.trim();
+    const role = body.role;
+
+    if (!name || !email || (role !== 'admin' && role !== 'agency')) {
       return NextResponse.json(
-        { error: "認証ユーザー一覧の取得に失敗しました。" },
-        { status: 500 }
+        { error: '名前、メール、ロールは必須です。' },
+        { status: 400 },
       );
     }
 
-    // profiles
-    const { data: profiles, error: profilesError } = await supabaseAdmin
-      .from("profiles")
-      .select("id, email, role, agency_id");
+    let agencyIdToUse: string | null | undefined = body.agencyId ?? null;
 
-    if (profilesError) {
-      console.error("[GET /api/admin/users] profiles error", profilesError);
-      return NextResponse.json(
-        { error: "プロフィール情報の取得に失敗しました。" },
-        { status: 500 }
-      );
+    const createdAgency = findOrCreateAgency(body.newAgencyName);
+    if (createdAgency) {
+      agencyIdToUse = createdAgency.id;
+    } else if (agencyIdToUse) {
+      const exists = AGENCIES.some((a) => a.id === agencyIdToUse);
+      if (!exists) {
+        return NextResponse.json(
+          { error: '指定された代理店が存在しません。' },
+          { status: 400 },
+        );
+      }
     }
 
-    // agencies
-    const { data: agencies, error: agenciesError } = await supabaseAdmin
-      .from("agencies")
-      .select("id, name, code")
-      .order("name", { ascending: true });
+    const user: AdminUser = {
+      id: crypto.randomUUID(),
+      name,
+      email,
+      role,
+      agencyId: agencyIdToUse ?? null,
+      createdAt: new Date().toISOString(),
+    };
 
-    if (agenciesError) {
-      console.error("[GET /api/admin/users] agencies error", agenciesError);
-      return NextResponse.json(
-        { error: "代理店情報の取得に失敗しました。" },
-        { status: 500 }
-      );
-    }
+    USERS.push(user);
 
-    const users =
-      usersResult?.users.map((u) => {
-        const profile = profiles?.find((p) => p.id === u.id) ?? null;
-        const agency =
-          profile?.agency_id != null
-            ? agencies?.find((a) => a.id === profile.agency_id) ?? null
-            : null;
-
-        return {
-          id: u.id,
-          email: u.email ?? "",
-          role: (profile?.role as Role | null) ?? "admin",
-          agencyId: profile?.agency_id ?? null,
-          agencyName: agency?.name ?? null,
-          agencyCode: agency?.code ?? null,
-        };
-      }) ?? [];
-
-    return NextResponse.json({
-      users,
-      agencies: agencies ?? [],
-    });
-  } catch (e) {
-    console.error("[GET /api/admin/users] unexpected error", e);
+    return NextResponse.json({ user, agencies: AGENCIES }, { status: 201 });
+  } catch (error) {
+    console.error(error);
     return NextResponse.json(
-      { error: "ユーザー一覧の取得中に予期しないエラーが発生しました。" },
-      { status: 500 }
+      { error: 'ユーザー作成に失敗しました。' },
+      { status: 500 },
     );
   }
 }
 
-export async function POST(request: Request) {
-  if (!supabaseAdmin) {
-    return NextResponse.json(
-      { error: "Supabase admin client が設定されていません。" },
-      { status: 500 }
-    );
-  }
-
+export async function PATCH(req: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as {
-      email?: string;
-      password?: string;
-      role?: Role;
-      agencyId?: string | null;
+    const body = (await req.json().catch(() => ({}))) as Partial<AdminUser> & {
+      id?: string;
+      newAgencyName?: string | null;
     };
 
-    const email = body.email?.trim() ?? "";
-    const password = body.password?.trim() ?? "";
-    const role: Role = body.role ?? "agency";
-    const agencyId = body.agencyId ?? null;
-
-    if (!email || !password) {
+    if (!body.id) {
       return NextResponse.json(
-        { error: "メールアドレスと初期パスワードは必須です。" },
-        { status: 400 }
+        { error: 'ユーザーIDが指定されていません。' },
+        { status: 400 },
       );
     }
 
-    if (role === "agency" && !agencyId) {
+    const target = USERS.find((u) => u.id === body.id);
+    if (!target) {
       return NextResponse.json(
-        { error: "代理店ユーザーを作成する場合は所属代理店を選択してください。" },
-        { status: 400 }
+        { error: 'ユーザーが見つかりません。' },
+        { status: 404 },
       );
     }
 
-    // auth.users に作成
-    const { data: createResult, error: createError } =
-      await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-      });
+    const createdAgency = findOrCreateAgency(body.newAgencyName);
+    let agencyIdToUse = body.agencyId ?? target.agencyId ?? null;
 
-    if (createError || !createResult?.user) {
-      console.error("[POST /api/admin/users] createUser error", createError);
-      return NextResponse.json(
-        { error: "認証ユーザーの作成に失敗しました。" },
-        { status: 500 }
-      );
+    if (createdAgency) {
+      agencyIdToUse = createdAgency.id;
+    } else if (agencyIdToUse) {
+      const exists = AGENCIES.some((a) => a.id === agencyIdToUse);
+      if (!exists) {
+        return NextResponse.json(
+          { error: '指定された代理店が存在しません。' },
+          { status: 400 },
+        );
+      }
     }
 
-    const user = createResult.user;
+    if (body.name?.trim()) target.name = body.name.trim();
+    if (body.email?.trim()) target.email = body.email.trim();
+    if (body.role === 'admin' || body.role === 'agency') target.role = body.role;
 
-    // profiles にも登録
-    const { error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .upsert({
-        id: user.id,
-        email: user.email,
-        role,
-        agency_id: role === "agency" ? agencyId : null,
-      });
+    target.agencyId = agencyIdToUse;
 
-    if (profileError) {
-      console.error("[POST /api/admin/users] profile upsert error", profileError);
-      return NextResponse.json(
-        { error: "プロフィール情報の保存に失敗しました。" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error("[POST /api/admin/users] unexpected error", e);
+    return NextResponse.json({ user: target, agencies: AGENCIES });
+  } catch (error) {
+    console.error(error);
     return NextResponse.json(
-      { error: "ユーザー作成中に予期しないエラーが発生しました。" },
-      { status: 500 }
+      { error: 'ユーザー更新に失敗しました。' },
+      { status: 500 },
     );
   }
 }

@@ -1,15 +1,14 @@
-// lib/supabaseClient.ts
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-// デモ用とはいえ、ここが空だと動かないので一応チェック
-if (!supabaseUrl) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_URL is not set");
-}
-if (!supabaseAnonKey) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is not set");
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Mock supabase client used for local development/builds.
+// Replace with a real Supabase client when backend credentials are available.
+export const supabase = {
+  auth: {
+    async getUser() {
+      return {
+        data: {
+          user: { email: 'mock-user@example.com' },
+        },
+        error: null,
+      } as const;
+    },
+  },
+};

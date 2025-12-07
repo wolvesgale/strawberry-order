@@ -4,40 +4,39 @@ import { sendOrderEmail } from "@/lib/ses";
 
 export const runtime = "nodejs";
 
-type OrderStatus = "pending" | "shipped" | "canceled";
+const ORDER_NUMBER_PREFIX = 'ORD';
 
-export type MockOrder = {
+type MockOrder = {
   id: string;
   orderNumber: string;
-  productName: string;
-  piecesPerSheet: number | null;
-  quantity: number;
-  postalAndAddress: string;
-  recipientName: string;
-  phoneNumber: string;
-  deliveryDate: string | null;
-  deliveryTimeNote: string | null;
-  agencyName: string | null;
-  createdByEmail: string | null;
-  status: OrderStatus;
-  createdAt: string;
+  product: MockProduct;
+  quantity: number; // セット数
+  piecesPerSheet: number;
+  deliveryDate: string;
+  deliveryAddress: string;
+  agencyName: string;
+  createdByEmail?: string | null;
+  status: MockOrderStatus;
+  createdAt: string; // ISO
 };
 
-// ひとまずメモリ上で保持（本番では Supabase などに差し替え予定）
-const orders: MockOrder[] = [];
+// メモリ上の「なんちゃってDB」
+let ORDERS: MockOrder[] = [];
 
-function generateId(): string {
-  return `${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
-}
+// ランダムな注文番号生成（あとで本実装時に差し替え）
+function generateOrderNumber(createdAtIso: string) {
+  const now = new Date(createdAtIso);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const datePart = `${y}${m}${d}`;
 
-// 本日から 3 日後 0:00
-function getMinDeliveryDate(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + 3);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  const sameDayCount = ORDERS.filter(
+    (o) => o.createdAt.slice(0, 10) === createdAtIso.slice(0, 10),
+  ).length;
+  const seq = String(sameDayCount + 1).padStart(4, '0');
+
+  return `${ORDER_NUMBER_PREFIX}-${datePart}-${seq}`;
 }
 
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
@@ -48,50 +47,33 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as any;
-    console.log("[MOCK ORDER BODY]", body);
+    const body = (await req.json().catch(() => ({}))) as {
+      productId: string;
+      quantity: number;
+      postalAndAddress: string;
+      recipientName: string;
+      phoneNumber: string;
+      deliveryDate: string;
+      deliveryTimeNote: string;
+      piecesPerSheet: number;
+      agencyName?: string | null;
+      createdByEmail?: string | null;
+    };
 
-    // ===== いちごの種類（productName） =====
-    const rawProduct =
-      body.product ??
-      body.selectedProduct ??
-      body.productId ??
-      body.productName ??
-      body.strawberryType ??
-      body.strawberry;
+    const {
+      productId,
+      quantity,
+      postalAndAddress,
+      recipientName,
+      phoneNumber,
+      deliveryDate,
+      deliveryTimeNote,
+      piecesPerSheet,
+      agencyName,
+      createdByEmail,
+    } = body;
 
-    let productName = "";
-
-    if (typeof rawProduct === "string") {
-      productName = rawProduct.trim();
-    } else if (rawProduct && typeof rawProduct === "object") {
-      const candidate =
-        rawProduct.name ??
-        rawProduct.label ??
-        rawProduct.text ??
-        rawProduct.title ??
-        rawProduct.id;
-
-      if (typeof candidate === "string" || typeof candidate === "number") {
-        productName = String(candidate).trim();
-      }
-    }
-
-    if (!productName) {
-      productName = "商品名未設定";
-    }
-
-    // ===== 1シートあたりの玉数 =====
-    const piecesRaw =
-      body.piecesPerSheet ??
-      body.pieces_per_sheet ??
-      body.pieces ??
-      body.ballsPerSheet;
-
-    const piecesPerSheet =
-      typeof piecesRaw === "number" ? piecesRaw : Number(piecesRaw);
-
-    if (![36, 30, 24, 20].includes(piecesPerSheet)) {
+    if (!productId || typeof quantity !== 'number') {
       return NextResponse.json(
         {
           error:
@@ -101,13 +83,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ===== セット数（シート数） =====
-    const quantityRaw =
-      body.quantity ?? body.sheetCount ?? body.sets ?? body.count;
-    const quantity =
-      typeof quantityRaw === "number" ? quantityRaw : Number(quantityRaw);
+    if (!piecesPerSheet || !deliveryDate || !postalAndAddress) {
+      return NextResponse.json(
+        { error: '玉数、到着希望日、納品先住所は必須です。' },
+        { status: 400 }
+      );
+    }
 
-    if (!Number.isInteger(quantity) || quantity < 2 || quantity % 2 !== 0) {
+    if (quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
         { error: "セット数（シート数）は2以上の偶数で入力してください。" },
         { status: 400 }
@@ -152,59 +135,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const parsedDelivery = new Date(deliveryDate);
-    if (Number.isNaN(parsedDelivery.getTime())) {
+    const today = new Date();
+    const minDate = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + 3,
+    );
+    const selectedDate = new Date(deliveryDate);
+
+    if (selectedDate < minDate) {
       return NextResponse.json(
-        { error: "到着日の形式が正しくありません。" },
-        { status: 400 }
+        { error: '到着希望日は本日から3日後以降の日付を選択してください。' },
+        { status: 400 },
       );
     }
 
-    const minDate = getMinDeliveryDate();
-    if (parsedDelivery < minDate) {
-      return NextResponse.json(
-        {
-          error:
-            "到着希望日は本日から3日後以降の日付を選択してください。",
-        },
-        { status: 400 }
-      );
-    }
-
-    const deliveryTimeNote =
-      typeof body.deliveryTimeNote === "string"
-        ? body.deliveryTimeNote.trim()
-        : null;
-
-    const agencyName =
-      typeof body.agencyName === "string" ? body.agencyName.trim() : null;
-
-    const createdByEmail =
-      typeof body.createdByEmail === "string"
-        ? body.createdByEmail.trim()
-        : null;
-
-    const now = new Date();
+    const createdAtDate = new Date();
+    const createdAtIso = createdAtDate.toISOString();
+    const createdAtDateOnly = !Number.isNaN(createdAtDate.getTime())
+      ? createdAtIso.slice(0, 10)
+      : '-';
+    const safeAgencyName = agencyName?.trim() || '代理店名未設定';
 
     const order: MockOrder = {
-      id: generateId(),
-      orderNumber: `MOCK-${now.getFullYear()}${String(
-        now.getMonth() + 1
-      ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(
-        orders.length + 1
-      ).padStart(4, "0")}`,
-      productName,
-      piecesPerSheet,
+      id: crypto.randomUUID(),
+      orderNumber: generateOrderNumber(createdAtIso),
+      product,
       quantity,
-      postalAndAddress,
-      recipientName,
-      phoneNumber,
+      piecesPerSheet,
       deliveryDate,
-      deliveryTimeNote,
-      agencyName,
-      createdByEmail,
-      status: "pending",
-      createdAt: now.toISOString(),
+      deliveryAddress: postalAndAddress,
+      agencyName: safeAgencyName,
+      createdByEmail: createdByEmail ?? null,
+      status: 'pending',
+      createdAt: createdAtIso,
     };
 
     orders.unshift(order);
@@ -222,49 +186,26 @@ export async function POST(request: NextRequest) {
     // 件名：代理店名 + 発注日（※「モック」表記や単価は出さない）
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
-    const mailLines: string[] = [];
+    const mailText = `以下の内容で発注を受付しました。\n\n` +
+      `注文番号: ${order.orderNumber}\n` +
+      `商品: ${product.name}\n` +
+      `玉数(1シート): ${piecesPerSheet}玉\n` +
+      `セット数: ${quantity}セット\n` +
+      `お届け先: ${postalAndAddress}\n` +
+      `到着希望日: ${deliveryDate}\n` +
+      `時間帯などのご希望: ${deliveryTimeNote || '-'}\n\n` +
+      `代理店名: ${safeAgencyName}\n` +
+      `発注者メール: ${createdByEmail || '-'}\n` +
+      `受付日時: ${createdAtDate.toLocaleString('ja-JP')}\n`;
 
-    mailLines.push("いちご発注が登録されました。");
-    mailLines.push("");
-    mailLines.push(`注文番号：${order.orderNumber}`);
-    mailLines.push("");
-    mailLines.push("【商品情報】");
-    mailLines.push(`いちごの種類：${order.productName}`);
-    mailLines.push(
-      `玉数/シート：${order.piecesPerSheet ?? "-"}玉`
-    );
-    mailLines.push(`シート数：${order.quantity}シート`);
-    mailLines.push("");
-    mailLines.push("【お届け先】");
-    mailLines.push(`郵便番号・住所：${order.postalAndAddress}`);
-    mailLines.push(`お届け先氏名：${order.recipientName}`);
-    mailLines.push(`電話番号：${order.phoneNumber}`);
-    mailLines.push("");
-    mailLines.push("【到着希望】");
-    mailLines.push(`希望到着日：${order.deliveryDate ?? "-"}`);
-    mailLines.push(`時間帯・メモ：${order.deliveryTimeNote ?? "-"}`);
-    mailLines.push("");
-    mailLines.push("【発注者】");
-    mailLines.push(`代理店名：${order.agencyName ?? "-"}`);
-    mailLines.push(`メールアドレス：${order.createdByEmail ?? "-"}`);
+    const subject = `いちご発注受付（${safeAgencyName} / ${createdAtDateOnly}）`;
 
-    const bodyText = mailLines.join("\n");
-
-    if (ORDER_MAIL_MODE === "ses") {
-      try {
-        await sendOrderEmail({ subject, bodyText });
-        console.log("[SES] Order mail sent", {
-          orderNumber: order.orderNumber,
-        });
-      } catch (err) {
-        console.error("[SES] Failed to send order mail", err);
-      }
-    } else {
-      console.log("[MOCK EMAIL] 発注メール送信:", {
-        subject,
-        bodyText,
-      });
-    }
+    // 本番ではここでSES等でメール送信する
+    console.log('[MOCK EMAIL] 発注メール送信:', {
+      to: 'greensum@example.com',
+      subject,
+      body: mailText,
+    });
 
     return NextResponse.json({ ok: true, order });
   } catch (error) {
