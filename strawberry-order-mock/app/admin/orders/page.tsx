@@ -92,9 +92,9 @@ export default function AdminOrdersPage() {
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-4">
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-slate-50">注文一覧（モック）</h1>
+            <h1 className="text-xl font-bold text-slate-50">注文一覧（管理者用）</h1>
             <p className="text-xs text-slate-400">
-              /order から発注したテストデータがここに一覧で表示されます。
+              /order から発注した注文データがここに一覧で表示されます。
             </p>
           </div>
           <div className="flex items-center gap-3">

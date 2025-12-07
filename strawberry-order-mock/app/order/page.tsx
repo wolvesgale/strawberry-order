@@ -212,7 +212,7 @@ export default function OrderPage() {
               href="/admin/orders"
               className="mt-2 inline-flex items-center text-xs text-emerald-300 hover:text-emerald-200 underline underline-offset-4"
             >
-              管理画面（モック）へ
+              管理画面へ
             </Link>
           </div>
 
@@ -362,7 +362,7 @@ export default function OrderPage() {
               disabled={submitting}
               className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60 disabled:hover:bg-emerald-500"
             >
-              {submitting ? "送信中..." : "発注する（モック）"}
+              {submitting ? "送信中..." : "発注する"}
             </button>
           </div>
         </form>

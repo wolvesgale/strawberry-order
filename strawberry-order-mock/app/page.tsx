@@ -4,10 +4,10 @@
       <main className="min-h-screen bg-slate-950">
         <div className="max-w-md mx-auto px-4 py-16 space-y-6">
           <h1 className="text-2xl font-bold text-slate-50">
-            いちご販売 受発注モック
+            いちご販売 受発注サイト
           </h1>
           <p className="text-sm text-slate-400">
-            仕入れ先向けのいちご受発注システムのモックです。
+            仕入れ先向けのいちご受発注システムです。
             下のリンクから画面に移動できます。
           </p>
 
