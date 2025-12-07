@@ -22,6 +22,18 @@ export type MockOrder = {
   status: OrderStatus;
   createdAt: string;
 };
+const PRODUCT_NAME_MAP: Record<string, string> = {
+  p1: "夏いちご",
+  p2: "夏秋いちご",
+  p3: "冬いちご",
+  p4: "プレミアムいちご詰め合わせ",
+};
+
+function resolveProductName(idOrLabel: string): string {
+  if (!idOrLabel) return "商品名未設定";
+  // p1 などのIDならラベルに変換、それ以外の文字列はそのまま使う
+  return PRODUCT_NAME_MAP[idOrLabel] ?? idOrLabel;
+}
 
 // ひとまずメモリ上で保持（本番では Supabase などに差し替え予定）
 const orders: MockOrder[] = [];
@@ -51,35 +63,35 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as any;
     console.log("[MOCK ORDER BODY]", body);
 
-    // ===== いちごの種類（productName） =====
-    const rawProduct =
-      body.product ??
-      body.selectedProduct ??
-      body.productId ??
-      body.productName ??
-      body.strawberryType ??
-      body.strawberry;
+// ===== いちごの種類（productName） =====
+const rawProduct =
+  body.product ??
+  body.selectedProduct ??
+  body.productId ??
+  body.productName ??
+  body.strawberryType ??
+  body.strawberry;
 
-    let productName = "";
+let productNameRaw = "";
 
-    if (typeof rawProduct === "string") {
-      productName = rawProduct.trim();
-    } else if (rawProduct && typeof rawProduct === "object") {
-      const candidate =
-        rawProduct.name ??
-        rawProduct.label ??
-        rawProduct.text ??
-        rawProduct.title ??
-        rawProduct.id;
+if (typeof rawProduct === "string") {
+  productNameRaw = rawProduct.trim();
+} else if (rawProduct && typeof rawProduct === "object") {
+  const candidate =
+    rawProduct.name ??
+    rawProduct.label ??
+    rawProduct.text ??
+    rawProduct.title ??
+    rawProduct.id;
 
-      if (typeof candidate === "string" || typeof candidate === "number") {
-        productName = String(candidate).trim();
-      }
-    }
+  if (typeof candidate === "string" || typeof candidate === "number") {
+    productNameRaw = String(candidate).trim();
+  }
+}
 
-    if (!productName) {
-      productName = "商品名未設定";
-    }
+// ★ここで p1 → 「夏いちご」などに変換
+const productName = resolveProductName(productNameRaw);
+
 
     // ===== 1シートあたりの玉数 =====
     const piecesRaw =
