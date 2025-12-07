@@ -6,9 +6,9 @@ type Role = "admin" | "agency";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
-  const userId = params.id;
+  const { id: userId } = await context.params;
 
   try {
     const admin = supabaseAdmin;
@@ -51,10 +51,12 @@ export async function PATCH(
       updates.agency_id = agencyId;
     }
 
-    const { error: profileError } = await admin
+    const adminClient = admin;
+
+    const { error: profileError } = await adminClient
       .from("profiles")
       .update(updates)
-      .eq("id", userId); // ★ user_id ではなく id
+      .eq("id", userId); // ★ profiles.id ベース
 
     if (profileError) {
       console.error(
@@ -79,9 +81,9 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
-  const userId = params.id;
+  const { id: userId } = await context.params;
 
   try {
     const admin = supabaseAdmin;
@@ -95,7 +97,9 @@ export async function DELETE(
       );
     }
 
-    const { error: profileError } = await admin
+    const adminClient = admin;
+
+    const { error: profileError } = await adminClient
       .from("profiles")
       .delete()
       .eq("id", userId); // ★ ここも id
@@ -111,7 +115,8 @@ export async function DELETE(
       );
     }
 
-    const { error: authError } = await admin.auth.admin.deleteUser(userId);
+    const { error: authError } =
+      await adminClient.auth.admin.deleteUser(userId);
 
     if (authError) {
       console.error(
