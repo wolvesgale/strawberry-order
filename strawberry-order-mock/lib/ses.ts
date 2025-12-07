@@ -20,9 +20,7 @@ const sesClient = new SESClient({
 export type OrderEmailPayload = {
   subject: string;
   bodyText: string;
-  /** 明示的に送信先を変えたい場合に指定。未指定なら ORDER_TO_EMAIL を優先 */
   to?: string;
-  /** 追加の CC（環境変数の ORDER_CC_EMAIL に加えてマージされる） */
   cc?: string[];
 };
 
@@ -32,17 +30,21 @@ export async function sendOrderEmail({
   to,
   cc,
 }: OrderEmailPayload): Promise<void> {
-  // 環境変数不足の場合は送信せず警告だけ
+  const resolvedTo = to ?? ORDER_TO;
+
+  // ここで環境を全部ログに出す
+  console.log("[SES] sendOrderEmail env", {
+    REGION,
+    FROM,
+    ORDER_TO,
+    ORDER_CC_EMAIL,
+    resolvedTo,
+  });
+
   if (!FROM || !REGION) {
-    console.warn(
-      "[SES] Missing FROM or REGION. Skip sending email.",
-      { FROM, REGION }
-    );
+    console.warn("[SES] Missing FROM or REGION. Skip sending email.");
     return;
   }
-
-  // 優先順位: 明示的 to > ORDER_TO_EMAIL
-  const resolvedTo = to ?? ORDER_TO;
 
   if (!resolvedTo) {
     console.warn(
@@ -59,6 +61,12 @@ export async function sendOrderEmail({
   if (cc && cc.length > 0) {
     ccAddresses.push(...cc);
   }
+
+  console.log("[SES] Sending email", {
+    subject,
+    to: resolvedTo,
+    ccAddresses,
+  });
 
   const command = new SendEmailCommand({
     Source: FROM,
@@ -80,5 +88,11 @@ export async function sendOrderEmail({
     },
   });
 
-  await sesClient.send(command);
+  try {
+    const resp = await sesClient.send(command);
+    console.log("[SES] SendEmail success", resp);
+  } catch (err) {
+    console.error("[SES SEND ERROR]", err);
+    throw err;
+  }
 }

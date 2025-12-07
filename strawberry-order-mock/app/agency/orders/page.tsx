@@ -11,13 +11,16 @@ type AgencyOrder = {
   id: string;
   orderNumber: string;
   productName: string;
-  unitPrice: number;
+
+  // 金額系は「あるかもしれない」扱いに
+  unitPrice?: number | null;
   quantity: number;
-  subtotalExTax: number;
-  taxAmount: number;
-  totalAmount: number;
+  subtotalExTax?: number | null;
+  taxAmount?: number | null;
+  totalAmount?: number | null;
+
   status: OrderStatus;
-  createdAt: string;
+  createdAt?: string;
   agencyName?: string;
   createdByEmail?: string;
 };
@@ -75,13 +78,20 @@ export default function AgencyOrdersPage() {
         const mapped: AgencyOrder[] = apiOrders.map((o) => ({
           id: o.id,
           orderNumber: o.orderNumber,
-          productName: o.product?.name ?? "",
-          unitPrice: o.product?.unitPrice ?? 0,
-          quantity: o.quantity,
-          subtotalExTax: o.subtotalExTax,
-          taxAmount: o.taxAmount,
-          totalAmount: o.totalAmount,
-          status: o.status,
+          productName: o.product?.name ?? o.productName ?? "",
+          unitPrice:
+            typeof o.unitPrice === "number"
+              ? o.unitPrice
+              : typeof o.product?.unitPrice === "number"
+              ? o.product.unitPrice
+              : null,
+          quantity: o.quantity ?? 0,
+          subtotalExTax:
+            typeof o.subtotalExTax === "number" ? o.subtotalExTax : null,
+          taxAmount: typeof o.taxAmount === "number" ? o.taxAmount : null,
+          totalAmount:
+            typeof o.totalAmount === "number" ? o.totalAmount : null,
+          status: o.status ?? "pending",
           createdAt: o.createdAt,
           agencyName: o.agencyName ?? "",
           createdByEmail: o.createdByEmail ?? "",
@@ -89,9 +99,12 @@ export default function AgencyOrdersPage() {
 
         // 自分に紐づくものだけ
         const filtered = mapped.filter((o) => {
-          const byEmail = o.createdByEmail && userEmail && o.createdByEmail === userEmail;
+          const byEmail =
+            o.createdByEmail && email && o.createdByEmail === email;
           const byAgency =
-            o.agencyName && agName && o.agencyName.trim() === agName.trim();
+            o.agencyName &&
+            agName &&
+            o.agencyName.trim() === agName.trim();
           return byEmail || byAgency;
         });
 
@@ -106,7 +119,20 @@ export default function AgencyOrdersPage() {
     }
 
     init();
-  }, [router, userEmail]);
+    // router だけ依存にして、userEmail は内部で完結させる
+  }, [router]);
+
+  const formatCurrency = (value?: number | null) => {
+    if (value == null || Number.isNaN(value)) return "-";
+    return `${value.toLocaleString("ja-JP")}円`;
+  };
+
+  const formatDateTime = (value?: string) => {
+    if (!value) return "-";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleString("ja-JP");
+  };
 
   if (checkingAuth) {
     return (
@@ -203,20 +229,20 @@ export default function AgencyOrdersPage() {
                       {order.productName}
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      単価: {order.unitPrice.toLocaleString("ja-JP")}円
+                      単価: {formatCurrency(order.unitPrice)}
                     </div>
                   </td>
                   <td className="px-4 py-3 align-top text-right">
                     {order.quantity}
                   </td>
                   <td className="px-4 py-3 align-top text-right">
-                    {order.subtotalExTax.toLocaleString("ja-JP")}円
+                    {formatCurrency(order.subtotalExTax)}
                   </td>
                   <td className="px-4 py-3 align-top text-right font-semibold">
-                    {order.totalAmount.toLocaleString("ja-JP")}円
+                    {formatCurrency(order.totalAmount)}
                   </td>
                   <td className="px-4 py-3 align-top text-center text-xs text-slate-400 whitespace-nowrap">
-                    {new Date(order.createdAt).toLocaleString("ja-JP")}
+                    {formatDateTime(order.createdAt)}
                   </td>
                 </tr>
               ))}
