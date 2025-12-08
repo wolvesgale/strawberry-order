@@ -1,6 +1,8 @@
 // app/api/admin/users/route.ts
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
+const DEFAULT_TEMP_PASSWORD =
+  process.env.INITIAL_USER_PASSWORD || "Ichigo-2025!";
 
 type Agency = {
   id: string;
@@ -243,15 +245,16 @@ export async function POST(req: Request) {
       Math.random().toString(36).slice(2, 10);
 
     // auth.users 作成
-    const { data: createdUserData, error: createUserError } =
-      await admin.auth.admin.createUser({
-        email,
-        password: tempPassword,
-        email_confirm: true,
-        user_metadata: {
-          name,
-        },
-      });
+const { data: createdUserData, error: createUserError } =
+  await admin.auth.admin.createUser({
+    email,
+    password: DEFAULT_TEMP_PASSWORD,
+    email_confirm: true,
+    user_metadata: {
+      name,
+    },
+  });
+
 
     if (createUserError || !createdUserData?.user) {
       console.error("POST /admin/users: createUser error", createUserError);
