@@ -23,7 +23,7 @@ export type MockOrder = {
   createdAt: string;
   // 追加で保持しておくが、今の画面では未使用
   productId?: string | null;
-  // 金額関連（今は null 前提。あとで管理画面から更新する想定）
+  // 金額関連
   unitPrice?: number | null;
   taxRate?: number | null;
   subtotal?: number | null;
@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
     const seq = (count ?? 0) + 1;
     const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
 
-    // ===== 金額（とりあえず null / ざっくり計算） =====
+    // ===== 金額（単価・税率は body から） =====
     const unitPrice: number | null =
       typeof body.unitPrice === "number" ? body.unitPrice : null;
     const taxRate: number | null =
@@ -449,7 +449,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * ステータス更新用 PATCH（管理画面向け）
+ * ステータス・金額更新用 PATCH（管理画面向け）
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -464,9 +464,11 @@ export async function PATCH(request: NextRequest) {
     const body = (await request.json()) as {
       id?: string;
       status?: OrderStatus;
+      unitPrice?: number | null;
+      taxRate?: number | null;
     };
 
-    const { id, status } = body;
+    const { id, status, unitPrice, taxRate } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -475,24 +477,74 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (!status) {
+    // まず現状を取得（数量・既存単価/税率が必要）
+    const { data: existing, error: fetchError } = await client
+      .from("orders")
+      .select(
+        `
+        id,
+        quantity,
+        unit_price,
+        tax_rate
+      `
+      )
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !existing) {
+      console.error("[/api/mock-orders PATCH] fetch error:", fetchError);
       return NextResponse.json(
-        { error: "更新後のステータスが指定されていません。" },
-        { status: 400 }
+        { error: "対象の注文が見つかりませんでした。" },
+        { status: 404 }
       );
     }
 
-    const allowed: OrderStatus[] = ["pending", "shipped", "canceled"];
-    if (!allowed.includes(status)) {
-      return NextResponse.json(
-        { error: "不正なステータスです。" },
-        { status: 400 }
-      );
+    const quantity: number = existing.quantity ?? 0;
+
+    const resolvedUnitPrice: number | null =
+      typeof unitPrice === "number"
+        ? unitPrice
+        : existing.unit_price ?? null;
+
+    const resolvedTaxRate: number | null =
+      typeof taxRate === "number"
+        ? taxRate
+        : existing.tax_rate ?? null;
+
+    let subtotal: number | null = null;
+    let taxAmount: number | null = null;
+    let totalAmount: number | null = null;
+
+    if (resolvedUnitPrice != null) {
+      subtotal = resolvedUnitPrice * quantity;
+      if (resolvedTaxRate != null) {
+        taxAmount = Math.round(subtotal * (Number(resolvedTaxRate) / 100));
+        totalAmount = subtotal + taxAmount;
+      }
+    }
+
+    const updatePayload: any = {
+      unit_price: resolvedUnitPrice,
+      tax_rate: resolvedTaxRate,
+      subtotal,
+      tax_amount: taxAmount,
+      total_amount: totalAmount,
+    };
+
+    if (status) {
+      const allowed: OrderStatus[] = ["pending", "shipped", "canceled"];
+      if (!allowed.includes(status)) {
+        return NextResponse.json(
+          { error: "不正なステータスです。" },
+          { status: 400 }
+        );
+      }
+      updatePayload.status = status;
     }
 
     const { data, error } = await client
       .from("orders")
-      .update({ status })
+      .update(updatePayload)
       .eq("id", id)
       .select(
         `

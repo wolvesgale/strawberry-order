@@ -1,4 +1,4 @@
-// app/order/page.tsx
+// strawberry-order-mock/app/order/page.tsx
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
@@ -215,6 +215,8 @@ export default function OrderPage() {
         body: JSON.stringify({
           productId: selectedProductId,
           productName: selectedProduct?.name ?? null,
+          unitPrice: selectedProduct?.unitPrice ?? null,
+          taxRate: selectedProduct?.taxRate ?? null,
           quantity,
           piecesPerSheet,
           postalAndAddress,

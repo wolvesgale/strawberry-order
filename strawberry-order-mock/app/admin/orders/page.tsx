@@ -8,19 +8,14 @@ import { supabase } from "../../../lib/supabaseClient";
 
 export type OrderStatus = "pending" | "shipped" | "canceled";
 
-export type AdminOrder = {
+type Order = {
   id: string;
   orderNumber: string;
   productName: string;
   piecesPerSheet: number | null;
   quantity: number;
-  postalAndAddress: string;
-  recipientName: string;
-  phoneNumber: string;
   deliveryDate: string | null;
-  deliveryTimeNote: string | null;
   agencyName: string | null;
-  createdByEmail: string | null;
   status: OrderStatus;
   createdAt: string;
   unitPrice: number | null;
@@ -31,43 +26,44 @@ export type AdminOrder = {
 };
 
 type OrdersApiResponse = {
-  orders: AdminOrder[];
+  orders: Order[];
 };
 
-const STATUS_LABEL: Record<OrderStatus, string> = {
+const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "受付",
-  shipped: "出荷済み",
+  shipped: "発送済み",
   canceled: "キャンセル",
 };
 
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  return `${yyyy}/${mm}/${dd} ${hh}:${mi}:${ss}`;
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toISOString().slice(0, 10);
 }
 
-function formatYen(value: number | null | undefined): string {
+function formatDateTime(dateStr: string | null): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "-";
+  const iso = d.toISOString();
+  return iso.replace("T", " ").slice(0, 19);
+}
+
+function formatCurrency(value: number | null): string {
   if (value == null) return "-";
-  return `${value.toLocaleString("ja-JP")}円`;
+  return value.toLocaleString("ja-JP");
 }
 
 export default function AdminOrdersPage() {
   const router = useRouter();
-
-  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [email, setEmail] = useState<string | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
 
-  // 認証チェック（ログインしてなければ /login に飛ばす）
+  // 認証チェック
   useEffect(() => {
     async function checkAuth() {
       const { data, error } = await supabase.auth.getUser();
@@ -78,7 +74,7 @@ export default function AdminOrdersPage() {
         router.push("/login");
         return;
       }
-      setSessionEmail(data.user.email ?? null);
+      setEmail(data.user.email ?? null);
     }
     checkAuth();
   }, [router]);
@@ -86,27 +82,14 @@ export default function AdminOrdersPage() {
   // 注文一覧取得
   useEffect(() => {
     async function fetchOrders() {
-      setLoading(true);
-      setError(null);
       try {
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
-        if (!res.ok) {
-          const json = await res.json().catch(() => null);
-          throw new Error(json?.error ?? "注文一覧の取得に失敗しました。");
-        }
+        if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
         const json = (await res.json()) as OrdersApiResponse;
-        const list = (json.orders ?? []).map((o) => ({
-          ...o,
-          unitPrice: o.unitPrice ?? null,
-          taxRate: o.taxRate ?? null,
-          subtotal: o.subtotal ?? null,
-          taxAmount: o.taxAmount ?? null,
-          totalAmount: o.totalAmount ?? null,
-        }));
-        setOrders(list);
+        setOrders(json.orders ?? []);
       } catch (e: any) {
         console.error(e);
-        setError(e.message ?? "注文一覧の取得に失敗しました。");
+        setError(e.message ?? "注文一覧の取得でエラーが発生しました。");
       } finally {
         setLoading(false);
       }
@@ -114,34 +97,90 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, []);
 
-  async function handleChangeStatus(id: string, nextStatus: OrderStatus) {
+  async function updateOrder(
+    id: string,
+    patch: { status?: OrderStatus; unitPrice?: number | null; taxRate?: number | null }
+  ) {
+    setSavingId(id);
     setError(null);
-    setUpdatingId(id);
-
     try {
       const res = await fetch("/api/mock-orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: nextStatus }),
+        body: JSON.stringify({ id, ...patch }),
       });
 
       if (!res.ok) {
         const json = await res.json().catch(() => null);
-        throw new Error(json?.error ?? "ステータス更新に失敗しました。");
+        throw new Error(json?.error ?? "更新に失敗しました。");
       }
 
       const json = await res.json();
-      const updated: AdminOrder | undefined = json.order;
+      const updated: Order = json.order;
 
       setOrders((prev) =>
-        prev.map((o) => (o.id === id && updated ? { ...o, ...updated } : o))
+        prev.map((o) => (o.id === id ? updated : o))
       );
     } catch (e: any) {
       console.error(e);
-      setError(e.message ?? "ステータス更新に失敗しました。");
+      setError(e.message ?? "更新に失敗しました。");
     } finally {
-      setUpdatingId(null);
+      setSavingId(null);
     }
+  }
+
+  function handleStatusChange(id: string, value: string) {
+    updateOrder(id, { status: value as OrderStatus });
+  }
+
+  function handleUnitPriceChange(id: string, value: string) {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              unitPrice:
+                value === ""
+                  ? null
+                  : Number.isNaN(Number(value))
+                  ? o.unitPrice
+                  : Number(value),
+            }
+          : o
+      )
+    );
+  }
+
+  function handleTaxRateChange(id: string, value: string) {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              taxRate:
+                value === ""
+                  ? null
+                  : Number.isNaN(Number(value))
+                  ? o.taxRate
+                  : Number(value),
+            }
+          : o
+      )
+    );
+  }
+
+  function handleUnitPriceBlur(order: Order) {
+    updateOrder(order.id, {
+      unitPrice: order.unitPrice ?? null,
+      taxRate: order.taxRate ?? null,
+    });
+  }
+
+  function handleTaxRateBlur(order: Order) {
+    updateOrder(order.id, {
+      unitPrice: order.unitPrice ?? null,
+      taxRate: order.taxRate ?? null,
+    });
   }
 
   async function handleLogout() {
@@ -161,142 +200,170 @@ export default function AdminOrdersPage() {
             <p className="text-sm text-slate-400">
               代理店経由で登録された発注が一覧で表示されます。
             </p>
-            {sessionEmail && (
-              <p className="mt-1 text-xs text-slate-500">
-                ログインメール：{sessionEmail}
-              </p>
-            )}
+            <p className="mt-1 text-xs text-slate-500">
+              ログインメール：{email ?? "未ログイン"}
+            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link
               href="/admin/users"
-              className="rounded-md border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs sm:text-sm hover:border-emerald-400 hover:text-emerald-200"
+              className="rounded-md border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800"
             >
               ユーザー管理
             </Link>
             <Link
               href="/order"
-              className="rounded-md border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs sm:text-sm hover:border-emerald-400 hover:text-emerald-200"
+              className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
             >
               発注フォーム
             </Link>
             <button
               onClick={handleLogout}
-              className="rounded-md bg-slate-800 px-3 py-1.5 text-xs sm:text-sm hover:bg-slate-700"
+              className="rounded-md border border-red-500 bg-red-600/10 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-500/20"
             >
               ログアウト
             </button>
           </div>
         </header>
 
-        {/* エラー表示 */}
         {error && (
           <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
             {error}
           </p>
         )}
 
-        {/* 一覧 */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-lg">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-            <p className="text-sm font-semibold text-slate-100">
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-100">
               注文一覧（{orders.length}件）
-            </p>
+            </h2>
             {loading && (
               <p className="text-xs text-slate-400">読み込み中...</p>
             )}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-xs sm:text-sm text-left">
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
+            <table className="min-w-full text-sm">
               <thead className="bg-slate-900/80 border-b border-slate-800">
-                <tr>
-                  <th className="px-3 py-2 whitespace-nowrap">注文ID</th>
-                  <th className="px-3 py-2 whitespace-nowrap">商品</th>
-                  <th className="px-3 py-2 whitespace-nowrap">玉数/シート</th>
-                  <th className="px-3 py-2 whitespace-nowrap">セット数</th>
-                  <th className="px-3 py-2 whitespace-nowrap">到着希望日</th>
-                  <th className="px-3 py-2 whitespace-nowrap">代理店</th>
-                  <th className="px-3 py-2 whitespace-nowrap">単価</th>
-                  <th className="px-3 py-2 whitespace-nowrap">小計(税抜)</th>
-                  <th className="px-3 py-2 whitespace-nowrap">消費税</th>
-                  <th className="px-3 py-2 whitespace-nowrap">合計(税込)</th>
-                  <th className="px-3 py-2 whitespace-nowrap">ステータス</th>
-                  <th className="px-3 py-2 whitespace-nowrap">受付日時</th>
+                <tr className="text-xs text-slate-400">
+                  <th className="px-4 py-2 text-left">注文ID</th>
+                  <th className="px-4 py-2 text-left">商品</th>
+                  <th className="px-4 py-2 text-center">玉数/シート</th>
+                  <th className="px-4 py-2 text-center">セット数</th>
+                  <th className="px-4 py-2 text-center">到着希望日</th>
+                  <th className="px-4 py-2 text-left">代理店</th>
+                  <th className="px-4 py-2 text-right">単価</th>
+                  <th className="px-4 py-2 text-right">税率</th>
+                  <th className="px-4 py-2 text-right">小計(税抜)</th>
+                  <th className="px-4 py-2 text-right">消費税</th>
+                  <th className="px-4 py-2 text-right">合計(税込)</th>
+                  <th className="px-4 py-2 text-center">ステータス</th>
+                  <th className="px-4 py-2 text-center">受付日時</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.length === 0 && !loading && (
-                  <tr>
-                    <td
-                      colSpan={12}
-                      className="px-3 py-4 text-center text-slate-400"
-                    >
-                      注文はまだ登録されていません。
-                    </td>
-                  </tr>
-                )}
-
-                {orders.map((o) => (
+                {orders.map((order) => (
                   <tr
-                    key={o.id}
-                    className="border-t border-slate-800 hover:bg-slate-800/40"
+                    key={order.id}
+                    className="border-t border-slate-800 hover:bg-slate-900/60"
                   >
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-100">
-                      {o.orderNumber}
+                    <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-200">
+                      {order.orderNumber}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-100">
-                      {o.productName}
+                    <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-100">
+                      {order.productName}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {o.piecesPerSheet != null
-                        ? `${o.piecesPerSheet}玉`
+                    <td className="px-4 py-2 text-center text-xs text-slate-100">
+                      {order.piecesPerSheet != null
+                        ? `${order.piecesPerSheet}玉`
                         : "-"}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {o.quantity}
+                    <td className="px-4 py-2 text-center text-xs text-slate-100">
+                      {order.quantity}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {o.deliveryDate ?? "-"}
+                    <td className="px-4 py-2 text-center text-xs text-slate-100">
+                      {formatDate(order.deliveryDate)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {o.agencyName ?? "-"}
+                    <td className="px-4 py-2 text-xs text-slate-100">
+                      {order.agencyName ?? "-"}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatYen(o.unitPrice)}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatYen(o.subtotal)}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatYen(o.taxAmount)}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap font-semibold text-emerald-200">
-                      {formatYen(o.totalAmount)}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <select
-                        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs sm:text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                        value={o.status}
-                        disabled={updatingId === o.id}
+
+                    {/* 単価 */}
+                    <td className="px-4 py-2 text-right text-xs text-slate-100">
+                      <input
+                        type="number"
+                        className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                        value={order.unitPrice ?? ""}
                         onChange={(e) =>
-                          handleChangeStatus(
-                            o.id,
-                            e.target.value as OrderStatus
-                          )
+                          handleUnitPriceChange(order.id, e.target.value)
                         }
+                        onBlur={() => handleUnitPriceBlur(order)}
+                      />
+                    </td>
+
+                    {/* 税率 */}
+                    <td className="px-4 py-2 text-right text-xs text-slate-100">
+                      <input
+                        type="number"
+                        className="w-16 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                        value={order.taxRate ?? ""}
+                        onChange={(e) =>
+                          handleTaxRateChange(order.id, e.target.value)
+                        }
+                        onBlur={() => handleTaxRateBlur(order)}
+                      />
+                    </td>
+
+                    {/* 小計・税・合計 */}
+                    <td className="px-4 py-2 text-right text-xs text-slate-100">
+                      {formatCurrency(order.subtotal)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs text-slate-100">
+                      {formatCurrency(order.taxAmount)}
+                    </td>
+                    <td className="px-4 py-2 text-right text-xs text-emerald-100 font-semibold">
+                      {formatCurrency(order.totalAmount)}
+                    </td>
+
+                    {/* ステータス */}
+                    <td className="px-4 py-2 text-center text-xs text-slate-100">
+                      <select
+                        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                        value={order.status}
+                        onChange={(e) =>
+                          handleStatusChange(order.id, e.target.value)
+                        }
+                        disabled={savingId === order.id}
                       >
-                        <option value="pending">受付</option>
-                        <option value="shipped">出荷済み</option>
-                        <option value="canceled">キャンセル</option>
+                        <option value="pending">
+                          {STATUS_LABELS["pending"]}
+                        </option>
+                        <option value="shipped">
+                          {STATUS_LABELS["shipped"]}
+                        </option>
+                        <option value="canceled">
+                          {STATUS_LABELS["canceled"]}
+                        </option>
                       </select>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-300">
-                      {formatDateTime(o.createdAt)}
+
+                    <td className="px-4 py-2 text-center text-xs text-slate-400 whitespace-nowrap">
+                      {formatDateTime(order.createdAt)}
                     </td>
                   </tr>
                 ))}
+
+                {orders.length === 0 && !loading && (
+                  <tr>
+                    <td
+                      colSpan={13}
+                      className="px-4 py-8 text-center text-xs text-slate-500"
+                    >
+                      現在登録されている注文はありません。
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
