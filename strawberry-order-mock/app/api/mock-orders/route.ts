@@ -55,49 +55,84 @@ function getMinDeliveryDate(): Date {
 
 /**
  * 注文一覧取得
- */
-export async function GET() {
-  const client = ensureSupabase();
+export async function GET(req: NextRequest) {
+  const client = supabaseAdmin;
   if (!client) {
-    // 設定ミス時は致命傷にせず空配列を返す
-    return NextResponse.json({ orders: [] });
-  }
-
-  const { data, error } = await client
-    .from("orders")
-    .select(
-      `
-      id,
-      order_number,
-      product_id,
-      product_name,
-      pieces_per_sheet,
-      quantity,
-      postal_and_address,
-      recipient_name,
-      phone_number,
-      delivery_date,
-      delivery_time_note,
-      agency_name,
-      created_by_email,
-      status,
-      unit_price,
-      tax_rate,
-      subtotal,
-      tax_amount,
-      total_amount,
-      created_at
-    `
-    )
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("[/api/mock-orders GET] Supabase error:", error);
+    console.error("[/api/mock-orders GET] supabaseAdmin is null");
     return NextResponse.json(
-      { error: `注文一覧の取得に失敗しました: ${error.message}` },
+      { error: "サーバー設定エラーです。管理者にお問い合わせください。" },
       { status: 500 }
     );
   }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const agencyName = searchParams.get("agencyName"); // 代理店名で絞り込み
+
+    let query = client
+      .from("orders")
+      .select(
+        [
+          "id",
+          "order_number",
+          "product_name",
+          "pieces_per_sheet",
+          "quantity",
+          "delivery_date",
+          "agency_name",
+          "status",
+          "created_at",
+          "unit_price",
+          "tax_rate",
+          "subtotal",
+          "tax_amount",
+          "total_amount",
+        ].join(",")
+      )
+      .order("created_at", { ascending: false });
+
+    if (agencyName) {
+      query = query.eq("agency_name", agencyName);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("[/api/mock-orders GET] orders error:", error);
+      return NextResponse.json(
+        { error: `注文一覧の取得に失敗しました: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    const rows = data ?? [];
+
+    const orders = rows.map((row: any) => ({
+      id: row.id as string,
+      orderNumber: row.order_number as string,
+      productName: row.product_name as string,
+      piecesPerSheet: row.pieces_per_sheet as number | null,
+      quantity: row.quantity as number,
+      deliveryDate: row.delivery_date as string | null,
+      agencyName: row.agency_name as string | null,
+      status: (row.status as "pending" | "shipped" | "canceled") ?? "pending",
+      createdAt: row.created_at as string,
+      unitPrice: row.unit_price as number | null,
+      taxRate: row.tax_rate as number | null,
+      subtotal: row.subtotal as number | null,
+      taxAmount: row.tax_amount as number | null,
+      totalAmount: row.total_amount as number | null,
+    }));
+
+    return NextResponse.json({ orders });
+  } catch (error: any) {
+    console.error("[/api/mock-orders GET] Unexpected error:", error);
+    return NextResponse.json(
+      { error: "注文一覧の取得中にエラーが発生しました。" },
+      { status: 500 }
+    );
+  }
+}
 
   const rows = (data ?? []) as any[];
 
