@@ -4,7 +4,6 @@ import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 const REGION = process.env.AWS_REGION || "ap-northeast-1";
 const FROM = process.env.SES_FROM_EMAIL;
 const ORDER_TO = process.env.ORDER_TO_EMAIL;
-const ORDER_CC_EMAIL = process.env.ORDER_CC_EMAIL;
 
 const sesClient = new SESClient({
   region: REGION,
@@ -20,7 +19,9 @@ const sesClient = new SESClient({
 export type OrderEmailPayload = {
   subject: string;
   bodyText: string;
+  /** 仕入れ先を個別指定したい場合だけ使用。通常は環境変数 ORDER_TO_EMAIL を使用 */
   to?: string;
+  /** 互換用に残しているが、現在の実装では CC 送信は行わない */
   cc?: string[];
 };
 
@@ -32,12 +33,11 @@ export async function sendOrderEmail({
 }: OrderEmailPayload): Promise<void> {
   const resolvedTo = to ?? ORDER_TO;
 
-  // ここで環境を全部ログに出す
+  // デバッグ用ログ（CC 関連はもう使っていない）
   console.log("[SES] sendOrderEmail env", {
     REGION,
     FROM,
     ORDER_TO,
-    ORDER_CC_EMAIL,
     resolvedTo,
   });
 
@@ -53,26 +53,24 @@ export async function sendOrderEmail({
     return;
   }
 
-  const ccAddresses: string[] = [];
-
-  if (ORDER_CC_EMAIL) {
-    ccAddresses.push(ORDER_CC_EMAIL);
-  }
+  // もし cc が渡されても、現在は使用しない方針
   if (cc && cc.length > 0) {
-    ccAddresses.push(...cc);
+    console.warn(
+      "[SES] cc is provided but ignored in current configuration:",
+      cc
+    );
   }
 
   console.log("[SES] Sending email", {
     subject,
     to: resolvedTo,
-    ccAddresses,
   });
 
   const command = new SendEmailCommand({
     Source: FROM,
     Destination: {
       ToAddresses: [resolvedTo],
-      CcAddresses: ccAddresses.length > 0 ? ccAddresses : undefined,
+      // ★ CC は一切指定しない
     },
     Message: {
       Subject: {
