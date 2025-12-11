@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type Season = "summer" | "autumn" | "winter";
+export type Season = "summer" | "autumn" | "winter";
 
 export type MockProduct = {
   id: string;
@@ -13,8 +13,8 @@ export type MockProduct = {
   taxRate: number; // パーセント表記（10 = 10%）
 };
 
-// ここはざっくりのマスタで OK（あとで Supabase 管理に移行予定）
-const PRODUCTS: MockProduct[] = [
+// ★ 商品マスタ：ここを書き換えるとデフォルト単価が変わる
+export const PRODUCTS: MockProduct[] = [
   {
     id: "akihime-summer",
     name: "夏いちご（章姫）",

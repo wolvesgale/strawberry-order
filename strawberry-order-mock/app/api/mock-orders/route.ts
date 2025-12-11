@@ -1,6 +1,7 @@
 // strawberry-order-mock/app/api/mock-orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { PRODUCTS } from "../mock-products/route";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export type MockOrder = {
   createdByEmail: string | null;
   status: OrderStatus;
   createdAt: string;
-  // 追加で保持しておくが、今の画面では未使用
+  // 追加で保持しておくが、今の画面では productId は内部用
   productId?: string | null;
   // 金額関連
   unitPrice?: number | null;
@@ -295,13 +296,22 @@ export async function POST(request: NextRequest) {
     const seq = (count ?? 0) + 1;
     const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
 
-    // ===== 金額（単価・税率は body から） =====
-    const unitPrice: number | null =
+    // ===== 金額：body で明示されていれば優先し、なければ商品マスタから採用 =====
+    let unitPrice: number | null =
       typeof body.unitPrice === "number" ? body.unitPrice : null;
-    const taxRate: number | null =
+    let taxRate: number | null =
       typeof body.taxRate === "number" ? body.taxRate : null;
 
-    const subtotal = unitPrice != null ? unitPrice * quantity : null;
+    if (unitPrice == null || taxRate == null) {
+      const master = PRODUCTS.find((p) => p.id === productId);
+      if (master) {
+        if (unitPrice == null) unitPrice = master.unitPrice;
+        if (taxRate == null) taxRate = master.taxRate;
+      }
+    }
+
+    const subtotal =
+      unitPrice != null ? unitPrice * quantity : null;
     const taxAmount =
       subtotal != null && taxRate != null
         ? Math.round(subtotal * (Number(taxRate) / 100))
@@ -449,7 +459,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * ステータス・金額更新用 PATCH（管理画面向け）
+ * ステータス更新用 PATCH（管理画面向け）
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -477,69 +487,70 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // まず現状を取得（数量・既存単価/税率が必要）
-    const { data: existing, error: fetchError } = await client
-      .from("orders")
-      .select(
-        `
-        id,
-        quantity,
-        unit_price,
-        tax_rate
-      `
-      )
-      .eq("id", id)
-      .single();
-
-    if (fetchError || !existing) {
-      console.error("[/api/mock-orders PATCH] fetch error:", fetchError);
+    if (!status) {
       return NextResponse.json(
-        { error: "対象の注文が見つかりませんでした。" },
-        { status: 404 }
+        { error: "更新後のステータスが指定されていません。" },
+        { status: 400 }
       );
     }
 
-    const quantity: number = existing.quantity ?? 0;
-
-    const resolvedUnitPrice: number | null =
-      typeof unitPrice === "number"
-        ? unitPrice
-        : existing.unit_price ?? null;
-
-    const resolvedTaxRate: number | null =
-      typeof taxRate === "number"
-        ? taxRate
-        : existing.tax_rate ?? null;
-
-    let subtotal: number | null = null;
-    let taxAmount: number | null = null;
-    let totalAmount: number | null = null;
-
-    if (resolvedUnitPrice != null) {
-      subtotal = resolvedUnitPrice * quantity;
-      if (resolvedTaxRate != null) {
-        taxAmount = Math.round(subtotal * (Number(resolvedTaxRate) / 100));
-        totalAmount = subtotal + taxAmount;
-      }
+    const allowed: OrderStatus[] = ["pending", "shipped", "canceled"];
+    if (!allowed.includes(status)) {
+      return NextResponse.json(
+        { error: "不正なステータスです。" },
+        { status: 400 }
+      );
     }
 
-    const updatePayload: any = {
-      unit_price: resolvedUnitPrice,
-      tax_rate: resolvedTaxRate,
-      subtotal,
-      tax_amount: taxAmount,
-      total_amount: totalAmount,
-    };
+    // 金額再計算（単価/税率が送られてきた場合）
+    const updatePayload: any = { status };
 
-    if (status) {
-      const allowed: OrderStatus[] = ["pending", "shipped", "canceled"];
-      if (!allowed.includes(status)) {
-        return NextResponse.json(
-          { error: "不正なステータスです。" },
-          { status: 400 }
+    if (typeof unitPrice === "number") {
+      updatePayload.unit_price = unitPrice;
+    }
+    if (typeof taxRate === "number") {
+      updatePayload.tax_rate = taxRate;
+    }
+
+    if (typeof unitPrice === "number" || typeof taxRate === "number") {
+      // いったん現在の quantity を取得して再計算
+      const { data: current, error: fetchError } = await client
+        .from("orders")
+        .select("quantity, unit_price, tax_rate")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) {
+        console.error(
+          "[/api/mock-orders PATCH] fetch current order error:",
+          fetchError
         );
+      } else {
+        const q = current.quantity as number;
+        const u =
+          typeof unitPrice === "number"
+            ? unitPrice
+            : (current.unit_price as number | null);
+        const t =
+          typeof taxRate === "number"
+            ? taxRate
+            : (current.tax_rate as number | null);
+
+        const subtotal =
+          u != null ? u * q : null;
+        const taxAmount =
+          subtotal != null && t != null
+            ? Math.round(subtotal * (Number(t) / 100))
+            : null;
+        const totalAmount =
+          subtotal != null && taxAmount != null
+            ? subtotal + taxAmount
+            : null;
+
+        updatePayload.subtotal = subtotal;
+        updatePayload.tax_amount = taxAmount;
+        updatePayload.total_amount = totalAmount;
       }
-      updatePayload.status = status;
     }
 
     const { data, error } = await client
