@@ -21,7 +21,9 @@ export type MockOrder = {
   createdByEmail: string | null;
   status: OrderStatus;
   createdAt: string;
-  // 金額関連（今は 0 / null で保存して、あとで管理画面から更新する想定）
+  // 追加で保持しておくが、今の画面では未使用
+  productId?: string | null;
+  // 金額関連（今は null 前提。あとで管理画面から更新する想定）
   unitPrice?: number | null;
   taxRate?: number | null;
   subtotal?: number | null;
@@ -50,6 +52,9 @@ function getMinDeliveryDate(): Date {
   return d;
 }
 
+/**
+ * 注文一覧取得
+ */
 export async function GET() {
   const client = ensureSupabase();
   if (!client) {
@@ -63,6 +68,7 @@ export async function GET() {
       `
       id,
       order_number,
+      product_id,
       product_name,
       pieces_per_sheet,
       quantity,
@@ -97,6 +103,7 @@ export async function GET() {
   const orders: MockOrder[] = rows.map((r) => ({
     id: r.id,
     orderNumber: r.order_number,
+    productId: r.product_id ?? null,
     productName: r.product_name ?? "",
     piecesPerSheet: r.pieces_per_sheet ?? null,
     quantity: r.quantity ?? 0,
@@ -119,6 +126,9 @@ export async function GET() {
   return NextResponse.json({ orders });
 }
 
+/**
+ * 新規注文作成
+ */
 export async function POST(request: NextRequest) {
   try {
     const client = ensureSupabase();
@@ -132,7 +142,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as any;
     console.log("[/api/mock-orders POST] body:", body);
 
-    // ===== productId（NOT NULL 制約回避用に必須） =====
+    // ===== productId（NOT NULL 制約用に必須） =====
     const productIdRaw = body.productId ?? body.product_id ?? null;
     const productId =
       typeof productIdRaw === "string" && productIdRaw.trim().length > 0
@@ -176,7 +186,11 @@ export async function POST(request: NextRequest) {
     // ===== そのほか入力値 =====
     const quantity = Number(body.quantity ?? 0);
     const piecesPerSheet = body.piecesPerSheet ?? body.pieces_per_sheet;
-    const postalAndAddress = (body.postalAndAddress ?? body.postal_and_address ?? "").trim();
+    const postalAndAddress = (
+      body.postalAndAddress ??
+      body.postal_and_address ??
+      ""
+    ).trim();
     const recipientName = (body.recipientName ?? body.recipient_name ?? "").trim();
     const phoneNumber = (body.phoneNumber ?? body.phone_number ?? "").trim();
     const deliveryDate = body.deliveryDate ?? null;
@@ -287,8 +301,7 @@ export async function POST(request: NextRequest) {
     const taxRate: number | null =
       typeof body.taxRate === "number" ? body.taxRate : null;
 
-    const subtotal =
-      unitPrice != null ? unitPrice * quantity : null;
+    const subtotal = unitPrice != null ? unitPrice * quantity : null;
     const taxAmount =
       subtotal != null && taxRate != null
         ? Math.round(subtotal * (Number(taxRate) / 100))
@@ -301,7 +314,6 @@ export async function POST(request: NextRequest) {
       .from("orders")
       .insert({
         order_number: orderNumber,
-        // ★ ここで product_id を必ず保存する
         product_id: productId,
         product_name: productName,
         pieces_per_sheet: piecesPerSheet,
@@ -324,6 +336,7 @@ export async function POST(request: NextRequest) {
         `
         id,
         order_number,
+        product_id,
         product_name,
         pieces_per_sheet,
         quantity,
@@ -356,6 +369,7 @@ export async function POST(request: NextRequest) {
     const saved: MockOrder = {
       id: data.id,
       orderNumber: data.order_number,
+      productId: data.product_id ?? productId,
       productName: data.product_name ?? productName,
       piecesPerSheet: data.pieces_per_sheet ?? piecesPerSheet,
       quantity: data.quantity ?? quantity,
@@ -429,6 +443,119 @@ export async function POST(request: NextRequest) {
     console.error("[/api/mock-orders POST] Unexpected error:", error);
     return NextResponse.json(
       { error: error?.message ?? "注文の登録中にエラーが発生しました。" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * ステータス更新用 PATCH（管理画面向け）
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const client = ensureSupabase();
+    if (!client) {
+      return NextResponse.json(
+        { error: "サーバー設定エラーです。管理者にお問い合わせください。" },
+        { status: 500 }
+      );
+    }
+
+    const body = (await request.json()) as {
+      id?: string;
+      status?: OrderStatus;
+    };
+
+    const { id, status } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "更新対象の注文 ID が指定されていません。" },
+        { status: 400 }
+      );
+    }
+
+    if (!status) {
+      return NextResponse.json(
+        { error: "更新後のステータスが指定されていません。" },
+        { status: 400 }
+      );
+    }
+
+    const allowed: OrderStatus[] = ["pending", "shipped", "canceled"];
+    if (!allowed.includes(status)) {
+      return NextResponse.json(
+        { error: "不正なステータスです。" },
+        { status: 400 }
+      );
+    }
+
+    const { data, error } = await client
+      .from("orders")
+      .update({ status })
+      .eq("id", id)
+      .select(
+        `
+        id,
+        order_number,
+        product_id,
+        product_name,
+        pieces_per_sheet,
+        quantity,
+        postal_and_address,
+        recipient_name,
+        phone_number,
+        delivery_date,
+        delivery_time_note,
+        agency_name,
+        created_by_email,
+        status,
+        unit_price,
+        tax_rate,
+        subtotal,
+        tax_amount,
+        total_amount,
+        created_at
+      `
+      )
+      .single();
+
+    if (error) {
+      console.error("[/api/mock-orders PATCH] Supabase error:", error);
+      return NextResponse.json(
+        { error: `注文ステータスの更新に失敗しました: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    const updated: MockOrder = {
+      id: data.id,
+      orderNumber: data.order_number,
+      productId: data.product_id ?? null,
+      productName: data.product_name ?? "",
+      piecesPerSheet: data.pieces_per_sheet ?? null,
+      quantity: data.quantity ?? 0,
+      postalAndAddress: data.postal_and_address ?? "",
+      recipientName: data.recipient_name ?? "",
+      phoneNumber: data.phone_number ?? "",
+      deliveryDate: data.delivery_date ?? null,
+      deliveryTimeNote: data.delivery_time_note ?? null,
+      agencyName: data.agency_name ?? null,
+      createdByEmail: data.created_by_email ?? null,
+      status: (data.status as OrderStatus) ?? "pending",
+      createdAt: data.created_at ?? new Date().toISOString(),
+      unitPrice: data.unit_price ?? null,
+      taxRate: data.tax_rate ?? null,
+      subtotal: data.subtotal ?? null,
+      taxAmount: data.tax_amount ?? null,
+      totalAmount: data.total_amount ?? null,
+    };
+
+    return NextResponse.json({ ok: true, order: updated });
+  } catch (error: any) {
+    console.error("[/api/mock-orders PATCH] Unexpected error:", error);
+    return NextResponse.json(
+      { error: error?.message ?? "注文ステータス更新中にエラーが発生しました。" },
       { status: 500 }
     );
   }
