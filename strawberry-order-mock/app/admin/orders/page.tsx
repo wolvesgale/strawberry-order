@@ -1,4 +1,3 @@
-// strawberry-order-mock/app/admin/orders/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -63,24 +62,56 @@ export default function AdminOrdersPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 認証チェック
+  // 認証 + ロールチェック完了フラグ
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // 認証 & ロールチェック
   useEffect(() => {
-    async function checkAuth() {
+    async function checkAuthAndRole() {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         console.error("supabase auth error", error);
       }
+
+      // 未ログイン → /login
       if (!data?.user) {
         router.push("/login");
         return;
       }
+
       setEmail(data.user.email ?? null);
+
+      // profiles から role を取得
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("supabase profiles error", profileError);
+        // 取得できない場合は安全側に倒して代理店画面へ
+        router.push("/order");
+        return;
+      }
+
+      if (!profile || profile.role !== "admin") {
+        // 管理者以外は代理店用フォームへリダイレクト
+        router.push("/order");
+        return;
+      }
+
+      // ここまで来たら「admin」として OK
+      setAuthChecked(true);
     }
-    checkAuth();
+
+    checkAuthAndRole();
   }, [router]);
 
-  // 注文一覧取得
+  // 注文一覧取得（admin と判定された後にだけ実行）
   useEffect(() => {
+    if (!authChecked) return;
+
     async function fetchOrders() {
       try {
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
@@ -95,7 +126,7 @@ export default function AdminOrdersPage() {
       }
     }
     fetchOrders();
-  }, []);
+  }, [authChecked]);
 
   async function updateOrder(
     id: string,
@@ -118,9 +149,7 @@ export default function AdminOrdersPage() {
       const json = await res.json();
       const updated: Order = json.order;
 
-      setOrders((prev) =>
-        prev.map((o) => (o.id === id ? updated : o))
-      );
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
     } catch (e: any) {
       console.error(e);
       setError(e.message ?? "更新に失敗しました。");
@@ -186,6 +215,17 @@ export default function AdminOrdersPage() {
   async function handleLogout() {
     await supabase.auth.signOut();
     router.push("/login");
+  }
+
+  // ロールチェック中は軽くプレースホルダだけ出す
+  if (!authChecked) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-sm text-slate-400">認証情報を確認しています...</p>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -322,7 +362,7 @@ export default function AdminOrdersPage() {
                     <td className="px-4 py-2 text-right text-xs text-slate-100">
                       {formatCurrency(order.taxAmount)}
                     </td>
-                    <td className="px-4 py-2 text-right text-xs text-emerald-100 font-semibold">
+                    <td className="px-4 py-2 text-right text-emerald-100 text-xs font-semibold">
                       {formatCurrency(order.totalAmount)}
                     </td>
 
