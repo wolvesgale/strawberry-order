@@ -106,7 +106,7 @@ export async function GET() {
       emailById.set(u.id, u.email ?? "");
     }
 
-    // ④ profiles × agencies × auth.users をマージして画面用に整形
+    // ④ profiles × agencies × auth.users をマージ
     const users: AdminUser[] = profiles.map((p) => {
       const agency =
         p.agency_id != null
@@ -117,7 +117,6 @@ export async function GET() {
 
       return {
         id: p.id,
-        // ← display_name を「名前」として扱う
         name: p.display_name ?? "",
         email,
         role: (p.role as Role) ?? "agency",
@@ -202,11 +201,14 @@ export async function POST(request: NextRequest) {
 
     // 必要なら新規代理店の作成
     if (!agencyId && newAgencyName) {
+      // ★ code にも必ず値を入れる（NOT NULL 対策）
+      const safeCode = newAgencyName; // 必要ならスラッグ生成に変えてもOK
+
       const { data: insertedAgency, error: insertAgencyError } = await client
         .from("agencies")
         .insert({
           name: newAgencyName,
-          code: null,
+          code: safeCode,
         })
         .select("id, name, code, created_at")
         .single();
@@ -246,8 +248,7 @@ export async function POST(request: NextRequest) {
 
     const authUser = authData.user;
 
-    // profiles へ紐付けレコード作成
-    // ※ name/email カラムは存在しないので display_name のみ保存
+    // profiles へ紐付けレコード作成（display_name を使用）
     const { data: profile, error: profileError } = await client
       .from("profiles")
       .insert({
@@ -293,7 +294,7 @@ export async function POST(request: NextRequest) {
     const user: AdminUser = {
       id: profile.id,
       name: profile.display_name ?? "",
-      email, // ここは作成時に使ったメールをそのまま返す
+      email,
       role: (profile.role as Role) ?? "agency",
       agencyId: profile.agency_id,
       agencyName: agency?.name ?? null,
