@@ -1,4 +1,4 @@
-// strawberry-order-mock/app/admin/users/page.tsx
+// app/admin/users/page.tsx
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
@@ -9,65 +9,65 @@ type Role = "admin" | "agency";
 type Agency = {
   id: string;
   name: string;
-  code: string;
-  createdAt: string;
+  code: string | null;
 };
 
-type AdminUserSummary = {
+type AdminUser = {
   id: string;
   name: string;
   email: string;
   role: Role;
   agencyId?: string | null;
+  agencyName?: string | null;
   createdAt: string;
 };
 
 type AdminUsersApiResponse = {
   agencies: Agency[];
-  users: AdminUserSummary[];
+  users: AdminUser[];
 };
 
 export default function AdminUsersPage() {
   const [agencies, setAgencies] = useState<Agency[]>([]);
-  const [users, setUsers] = useState<AdminUserSummary[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [submitLoading, setSubmitLoading] = useState(false);
-
+  // フォーム入力値
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("agency");
-  const [agencyId, setAgencyId] = useState<string>("");
+  const [selectedAgencyId, setSelectedAgencyId] = useState<string>("");
   const [newAgencyName, setNewAgencyName] = useState("");
 
+  // UI 状態
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  // 一覧読み込み
+  // 一覧取得
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
+    async function fetchAdminData() {
+      setInitialLoading(true);
       setError(null);
-
       try {
         const res = await fetch("/api/admin/users", { cache: "no-store" });
         if (!res.ok) {
           const json = await res.json().catch(() => null);
-          throw new Error(json?.error ?? "一覧の取得に失敗しました。");
+          throw new Error(json?.error ?? "ユーザー情報の取得に失敗しました。");
         }
-
         const json = (await res.json()) as AdminUsersApiResponse;
+
         setAgencies(json.agencies ?? []);
         setUsers(json.users ?? []);
       } catch (e: any) {
-        console.error(e);
-        setError(e.message ?? "一覧の取得でエラーが発生しました。");
+        console.error("[admin/users] fetch error", e);
+        setError(e.message ?? "ユーザー情報の取得に失敗しました。");
       } finally {
-        setLoading(false);
+        setInitialLoading(false);
       }
     }
 
-    fetchData();
+    fetchAdminData();
   }, []);
 
   async function handleSubmit(e: FormEvent) {
@@ -84,15 +84,17 @@ export default function AdminUsersPage() {
       return;
     }
 
-    if (role === "agency" && !agencyId && !newAgencyName.trim()) {
-      setError(
-        "ロールが代理店の場合、既存代理店を選択するか、新しい代理店名を入力してください。"
-      );
+    // agency ロールのときは、既存代理店 or 新規代理店のいずれか必須
+    if (
+      role === "agency" &&
+      !selectedAgencyId &&
+      !newAgencyName.trim()
+    ) {
+      setError("代理店ユーザーの場合、所属代理店か新しい代理店名を入力してください。");
       return;
     }
 
-    setSubmitLoading(true);
-
+    setLoading(true);
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -101,7 +103,7 @@ export default function AdminUsersPage() {
           name: name.trim(),
           email: email.trim(),
           role,
-          agencyId: agencyId || null,
+          agencyId: selectedAgencyId || null,
           newAgencyName: newAgencyName.trim() || null,
         }),
       });
@@ -112,45 +114,43 @@ export default function AdminUsersPage() {
         throw new Error(json?.error ?? "ユーザー作成に失敗しました。");
       }
 
-      setMessage("ユーザーを作成しました。初期パスワードでログインできます。");
-
-      // 新規ユーザーを一覧に追加（軽く再描画）
+      // 追加されたユーザー & 代理店一覧で再描画
       if (json?.user) {
-        setUsers((prev) => [json.user as AdminUserSummary, ...prev]);
-      } else {
-        // 念のため再取得
-        const reload = await fetch("/api/admin/users", { cache: "no-store" });
-        if (reload.ok) {
-          const data = (await reload.json()) as AdminUsersApiResponse;
-          setAgencies(data.agencies ?? []);
-          setUsers(data.users ?? []);
-        }
+        setUsers((prev) => [json.user as AdminUser, ...prev]);
+      }
+      if (json?.agencies) {
+        setAgencies(json.agencies as Agency[]);
       }
 
-      // フォームクリア
+      setMessage("ユーザーを作成しました。初期パスワードは事前に共有した値になります。");
+
+      // フォームリセット
       setName("");
       setEmail("");
       setRole("agency");
-      setAgencyId("");
+      setSelectedAgencyId("");
       setNewAgencyName("");
     } catch (e: any) {
-      console.error(e);
+      console.error("[admin/users] create error", e);
       setError(e.message ?? "ユーザー作成に失敗しました。");
     } finally {
-      setSubmitLoading(false);
+      setLoading(false);
     }
   }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-5xl mx-auto space-y-8">
         {/* ヘッダー */}
         <header className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">ユーザー管理</h1>
-            <p className="mt-1 text-sm text-slate-400">
+            <h1 className="text-2xl font-bold tracking-tight">
+              ユーザー管理
+            </h1>
+            <p className="text-sm text-slate-400">
               ユーザーのロールと所属代理店を管理します。新しい代理店もここから追加できます。
             </p>
+
             <Link
               href="/admin/orders"
               className="mt-2 inline-flex items-center text-xs text-emerald-300 hover:text-emerald-200 underline underline-offset-4"
@@ -160,17 +160,20 @@ export default function AdminUsersPage() {
           </div>
 
           {message && (
-            <p className="text-xs sm:text-sm text-emerald-100 bg-emerald-900/40 border border-emerald-700 rounded-md px-3 py-2 max-w-xs">
+            <p className="max-w-xs rounded-md bg-emerald-900/40 border border-emerald-700 px-3 py-2 text-xs text-emerald-100">
               {message}
             </p>
           )}
         </header>
 
-        {/* 新規ユーザー作成フォーム */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg space-y-4">
-          <h2 className="text-lg font-semibold">新規ユーザー作成</h2>
+        {/* 新規作成フォーム */}
+        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-6 space-y-4 shadow-lg">
+          <h2 className="text-sm font-semibold text-slate-100">
+            新規ユーザー作成
+          </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* 名前 */}
             <div className="space-y-1">
               <label className="block text-xs font-medium text-slate-200">
                 名前
@@ -183,11 +186,13 @@ export default function AdminUsersPage() {
               />
             </div>
 
+            {/* メール */}
             <div className="space-y-1">
               <label className="block text-xs font-medium text-slate-200">
                 メール
               </label>
               <input
+                type="email"
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -195,35 +200,36 @@ export default function AdminUsersPage() {
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-200">
-                  ロール
-                </label>
-                <select
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as Role)}
-                >
-                  <option value="admin">admin（管理者）</option>
-                  <option value="agency">agency（代理店）</option>
-                </select>
-              </div>
+            {/* ロール */}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-200">
+                ロール
+              </label>
+              <select
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={role}
+                onChange={(e) => setRole(e.target.value as Role)}
+              >
+                <option value="agency">agency（代理店）</option>
+                <option value="admin">admin（管理者）</option>
+              </select>
+            </div>
 
+            {/* 所属代理店 & 新規代理店名 */}
+            <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-slate-200">
                   所属代理店（任意）
                 </label>
                 <select
                   className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                  value={agencyId}
-                  onChange={(e) => setAgencyId(e.target.value)}
-                  disabled={role !== "agency"}
+                  value={selectedAgencyId}
+                  onChange={(e) => setSelectedAgencyId(e.target.value)}
                 >
-                  <option value="">(未設定)</option>
+                  <option value="">（未設定）</option>
                   {agencies.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name}（{a.code}）
+                      {a.name}
                     </option>
                   ))}
                 </select>
@@ -231,28 +237,27 @@ export default function AdminUsersPage() {
                   ロールが代理店の場合、既存代理店を選択するか下の「新しい代理店名」を入力してください。
                 </p>
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-200">
-                新しい代理店名（任意）
-              </label>
-              <input
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={newAgencyName}
-                onChange={(e) => setNewAgencyName(e.target.value)}
-                placeholder="例）いちごの香り"
-                disabled={role !== "agency"}
-              />
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-200">
+                  新しい代理店名（任意）
+                </label>
+                <input
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                  value={newAgencyName}
+                  onChange={(e) => setNewAgencyName(e.target.value)}
+                  placeholder="例）いちごの香り"
+                />
+              </div>
             </div>
 
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={submitLoading}
+                disabled={loading}
                 className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60 disabled:hover:bg-emerald-500"
               >
-                {submitLoading ? "作成中..." : "作成する"}
+                {loading ? "作成中..." : "作成する"}
               </button>
             </div>
           </form>
@@ -266,9 +271,9 @@ export default function AdminUsersPage() {
 
         {/* ユーザー一覧 */}
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">ユーザー一覧</h2>
+          <h2 className="text-sm font-semibold text-slate-100">ユーザー一覧</h2>
 
-          {loading ? (
+          {initialLoading ? (
             <p className="text-sm text-slate-400">読み込み中...</p>
           ) : users.length === 0 ? (
             <p className="text-sm text-slate-400">
@@ -277,51 +282,48 @@ export default function AdminUsersPage() {
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-900/80 border-b border-slate-800">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium text-slate-300">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-900/80">
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-slate-400">
                       名前
                     </th>
-                    <th className="px-4 py-2 text-left font-medium text-slate-300">
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-slate-400">
                       メール
                     </th>
-                    <th className="px-4 py-2 text-left font-medium text-slate-300">
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-slate-400">
                       ロール
                     </th>
-                    <th className="px-4 py-2 text-left font-medium text-slate-300">
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-slate-400">
                       代理店
                     </th>
-                    <th className="px-4 py-2 text-left font-medium text-slate-300">
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-slate-400">
                       作成日
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => {
-                    const agency = agencies.find((a) => a.id === u.agencyId);
-                    return (
-                      <tr
-                        key={u.id}
-                        className="border-t border-slate-800 hover:bg-slate-800/40"
-                      >
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          {u.name}
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          {u.email}
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          {u.role}
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap">
-                          {agency ? `${agency.name}（${agency.code}）` : "-"}
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-400">
-                          {u.createdAt?.slice(0, 10) ?? "-"}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {users.map((u) => (
+                    <tr
+                      key={u.id}
+                      className="border-t border-slate-800/80 hover:bg-slate-800/40"
+                    >
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {u.name}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {u.email}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {u.role}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {u.agencyName ?? "-"}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-400">
+                        {u.createdAt?.slice(0, 10) ?? "-"}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
