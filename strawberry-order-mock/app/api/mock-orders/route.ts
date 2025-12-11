@@ -132,6 +132,20 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as any;
     console.log("[/api/mock-orders POST] body:", body);
 
+    // ===== productId（NOT NULL 制約回避用に必須） =====
+    const productIdRaw = body.productId ?? body.product_id ?? null;
+    const productId =
+      typeof productIdRaw === "string" && productIdRaw.trim().length > 0
+        ? productIdRaw.trim()
+        : null;
+
+    if (!productId) {
+      return NextResponse.json(
+        { error: "商品が選択されていません。" },
+        { status: 400 }
+      );
+    }
+
     // ===== 商品名 =====
     const rawProduct =
       body.productName ??
@@ -287,6 +301,8 @@ export async function POST(request: NextRequest) {
       .from("orders")
       .insert({
         order_number: orderNumber,
+        // ★ ここで product_id を必ず保存する
+        product_id: productId,
         product_name: productName,
         pieces_per_sheet: piecesPerSheet,
         quantity,
