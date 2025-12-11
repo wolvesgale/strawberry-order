@@ -278,6 +278,24 @@ export default function OrderPage() {
             >
               管理画面へ
             </Link>
+{/* 管理系リンク */}
+<div className="mt-2 flex flex-wrap gap-2 text-xs">
+  {/* 管理者用：注文一覧（admin 以外は /admin/orders 側でリダイレクトされる） */}
+  <Link
+    href="/admin/orders"
+    className="inline-flex items-center rounded-md border border-slate-600 px-2 py-1 text-slate-200 hover:bg-slate-800"
+  >
+    管理者用注文一覧
+  </Link>
+
+  {/* 代理店・管理者共通：自分の代理店の発注履歴 */}
+  <Link
+    href="/orders"
+    className="inline-flex items-center rounded-md border border-emerald-500 px-2 py-1 text-emerald-200 hover:bg-emerald-500/10"
+  >
+    自分の発注履歴を見る
+  </Link>
+</div>
           </div>
 
           {message && (
