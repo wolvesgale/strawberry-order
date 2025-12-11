@@ -1,11 +1,10 @@
-// app/api/mock-orders/route.ts
+// strawberry-order-mock/app/api/mock-orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { sendOrderEmail } from "@/lib/ses";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-type OrderStatus = "pending" | "shipped" | "canceled";
+export type OrderStatus = "pending" | "shipped" | "canceled";
 
 export type MockOrder = {
   id: string;
@@ -22,9 +21,26 @@ export type MockOrder = {
   createdByEmail: string | null;
   status: OrderStatus;
   createdAt: string;
+  // 金額関連（今は 0 / null で保存して、あとで管理画面から更新する想定）
+  unitPrice?: number | null;
+  taxRate?: number | null;
+  subtotal?: number | null;
+  taxAmount?: number | null;
+  totalAmount?: number | null;
 };
 
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
+
+// Supabase 管理クライアントの null ガード
+function ensureSupabase() {
+  if (!supabaseAdmin) {
+    console.error(
+      "[/api/mock-orders] supabaseAdmin is null. Check SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY."
+    );
+    return null;
+  }
+  return supabaseAdmin;
+}
 
 // 本日から 3 日後 0:00
 function getMinDeliveryDate(): Date {
@@ -35,106 +51,97 @@ function getMinDeliveryDate(): Date {
 }
 
 export async function GET() {
-  // ★ ここで null ガード
-  if (!supabaseAdmin) {
-    console.error(
-      "[GET /api/mock-orders] Supabase admin client is not configured"
-    );
+  const client = ensureSupabase();
+  if (!client) {
+    // 設定ミス時は致命傷にせず空配列を返す
+    return NextResponse.json({ orders: [] });
+  }
+
+  const { data, error } = await client
+    .from("orders")
+    .select(
+      `
+      id,
+      order_number,
+      product_name,
+      pieces_per_sheet,
+      quantity,
+      postal_and_address,
+      recipient_name,
+      phone_number,
+      delivery_date,
+      delivery_time_note,
+      agency_name,
+      created_by_email,
+      status,
+      unit_price,
+      tax_rate,
+      subtotal,
+      tax_amount,
+      total_amount,
+      created_at
+    `
+    )
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[/api/mock-orders GET] Supabase error:", error);
     return NextResponse.json(
-      {
-        error: "サーバー設定エラーが発生しました。",
-        orders: [],
-      },
+      { error: `注文一覧の取得に失敗しました: ${error.message}` },
       { status: 500 }
     );
   }
 
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("orders")
-      .select(
-        `
-          id,
-          order_number,
-          product_name,
-          pieces_per_sheet,
-          quantity,
-          postal_and_address,
-          recipient_name,
-          phone_number,
-          delivery_date,
-          delivery_time_note,
-          agency_name,
-          created_by_email,
-          status,
-          created_at
-        `
-      )
-      .order("created_at", { ascending: false });
+  const rows = (data ?? []) as any[];
 
-    if (error) {
-      console.error("[GET /api/mock-orders] orders select error", error);
+  const orders: MockOrder[] = rows.map((r) => ({
+    id: r.id,
+    orderNumber: r.order_number,
+    productName: r.product_name ?? "",
+    piecesPerSheet: r.pieces_per_sheet ?? null,
+    quantity: r.quantity ?? 0,
+    postalAndAddress: r.postal_and_address ?? "",
+    recipientName: r.recipient_name ?? "",
+    phoneNumber: r.phone_number ?? "",
+    deliveryDate: r.delivery_date ?? null,
+    deliveryTimeNote: r.delivery_time_note ?? null,
+    agencyName: r.agency_name ?? null,
+    createdByEmail: r.created_by_email ?? null,
+    status: (r.status as OrderStatus) ?? "pending",
+    createdAt: r.created_at ?? new Date().toISOString(),
+    unitPrice: r.unit_price ?? null,
+    taxRate: r.tax_rate ?? null,
+    subtotal: r.subtotal ?? null,
+    taxAmount: r.tax_amount ?? null,
+    totalAmount: r.total_amount ?? null,
+  }));
+
+  return NextResponse.json({ orders });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const client = ensureSupabase();
+    if (!client) {
       return NextResponse.json(
-        { error: "注文一覧の取得に失敗しました。" },
+        { error: "サーバー設定エラーです。管理者にお問い合わせください。" },
         { status: 500 }
       );
     }
 
-    const orders: MockOrder[] =
-      (data ?? []).map((row: any) => ({
-        id: row.id,
-        orderNumber: row.order_number,
-        productName: row.product_name ?? "",
-        piecesPerSheet: row.pieces_per_sheet ?? null,
-        quantity: row.quantity ?? 0,
-        postalAndAddress: row.postal_and_address ?? "",
-        recipientName: row.recipient_name ?? "",
-        phoneNumber: row.phone_number ?? "",
-        deliveryDate: row.delivery_date ?? null,
-        deliveryTimeNote: row.delivery_time_note ?? null,
-        agencyName: row.agency_name ?? null,
-        createdByEmail: row.created_by_email ?? null,
-        status: (row.status as OrderStatus) ?? "pending",
-        createdAt: row.created_at,
-      })) ?? [];
-
-    return NextResponse.json({ orders });
-  } catch (error) {
-    console.error("[GET /api/mock-orders] unexpected error", error);
-    return NextResponse.json(
-      { error: "注文一覧の取得中にエラーが発生しました。" },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  // ★ ここでも null ガード
-  if (!supabaseAdmin) {
-    console.error(
-      "[POST /api/mock-orders] Supabase admin client is not configured"
-    );
-    return NextResponse.json(
-      { error: "サーバー設定エラーが発生しました。" },
-      { status: 500 }
-    );
-  }
-
-  try {
     const body = (await request.json()) as any;
-    console.log("[MOCK ORDER BODY]", body);
+    console.log("[/api/mock-orders POST] body:", body);
 
-    // ===== いちごの種類（productName） =====
+    // ===== 商品名 =====
     const rawProduct =
+      body.productName ??
       body.product ??
       body.selectedProduct ??
       body.productId ??
-      body.productName ??
       body.strawberryType ??
       body.strawberry;
 
     let productName = "";
-
     if (typeof rawProduct === "string") {
       productName = rawProduct.trim();
     } else if (rawProduct && typeof rawProduct === "object") {
@@ -144,50 +151,33 @@ export async function POST(request: NextRequest) {
         rawProduct.text ??
         rawProduct.title ??
         rawProduct.id;
-
-      if (typeof candidate === "string" || typeof candidate === "number") {
+      if (candidate != null) {
         productName = String(candidate).trim();
       }
     }
-
     if (!productName) {
       productName = "商品名未設定";
     }
 
-    // ===== 1シートあたりの玉数 =====
-    const piecesRaw =
-      body.piecesPerSheet ??
-      body.pieces_per_sheet ??
-      body.pieces ??
-      body.ballsPerSheet;
+    // ===== そのほか入力値 =====
+    const quantity = Number(body.quantity ?? 0);
+    const piecesPerSheet = body.piecesPerSheet ?? body.pieces_per_sheet;
+    const postalAndAddress = (body.postalAndAddress ?? body.postal_and_address ?? "").trim();
+    const recipientName = (body.recipientName ?? body.recipient_name ?? "").trim();
+    const phoneNumber = (body.phoneNumber ?? body.phone_number ?? "").trim();
+    const deliveryDate = body.deliveryDate ?? null;
+    const deliveryTimeNote = body.deliveryTimeNote ?? null;
+    const createdByEmail = body.createdByEmail ?? null;
+    const agencyName = body.agencyName ?? body.agency_name ?? null;
 
-    const piecesPerSheet =
-      typeof piecesRaw === "number" ? piecesRaw : Number(piecesRaw);
-
-    if (![36, 30, 24, 20].includes(piecesPerSheet)) {
+    // ===== バリデーション（フロントと同等） =====
+    if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
-        {
-          error:
-            "1シートあたりの玉数は36玉 / 30玉 / 24玉 / 20玉から選択してください。",
-        },
+        { error: "数量は 1 以上の偶数で入力してください。" },
         { status: 400 }
       );
     }
 
-    // ===== セット数（シート数） =====
-    const quantityRaw =
-      body.quantity ?? body.sheetCount ?? body.sets ?? body.count;
-    const quantity =
-      typeof quantityRaw === "number" ? quantityRaw : Number(quantityRaw);
-
-    if (!Number.isInteger(quantity) || quantity < 2 || quantity % 2 !== 0) {
-      return NextResponse.json(
-        { error: "セット数（シート数）は2以上の偶数で入力してください。" },
-        { status: 400 }
-      );
-    }
-
-    // 冬いちごだけ 4 の倍数チェック
     if (productName.includes("冬") && quantity % 4 !== 0) {
       return NextResponse.json(
         { error: "冬いちごは4の倍数で入力してください。" },
@@ -195,29 +185,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ===== お届け先情報 =====
-    const postalAndAddress =
-      typeof body.postalAndAddress === "string"
-        ? body.postalAndAddress.trim()
-        : "";
-    const recipientName =
-      typeof body.recipientName === "string"
-        ? body.recipientName.trim()
-        : "";
-    const phoneNumber =
-      typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : "";
-
-    if (!postalAndAddress || !recipientName || !phoneNumber) {
+    const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
+    if (
+      !piecesPerSheet ||
+      !PIECES_PER_SHEET_OPTIONS.includes(Number(piecesPerSheet))
+    ) {
       return NextResponse.json(
-        { error: "お届け先情報（住所・氏名・電話番号）を入力してください。" },
+        { error: "1シートあたりの玉数を選択してください。" },
         { status: 400 }
       );
     }
 
-    // ===== 到着希望日（3日後以降） =====
-    const deliveryDate =
-      typeof body.deliveryDate === "string" ? body.deliveryDate : "";
-
+    if (!postalAndAddress) {
+      return NextResponse.json(
+        { error: "郵便番号・住所を入力してください。" },
+        { status: 400 }
+      );
+    }
+    if (!recipientName) {
+      return NextResponse.json(
+        { error: "お届け先氏名を入力してください。" },
+        { status: 400 }
+      );
+    }
+    if (!phoneNumber) {
+      return NextResponse.json(
+        { error: "運送会社と連絡が取れる電話番号を入力してください。" },
+        { status: 400 }
+      );
+    }
     if (!deliveryDate) {
       return NextResponse.json(
         { error: "ご希望の到着日を選択してください。" },
@@ -225,37 +221,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const parsedDelivery = new Date(deliveryDate);
-    if (Number.isNaN(parsedDelivery.getTime())) {
-      return NextResponse.json(
-        { error: "到着日の形式が正しくありません。" },
-        { status: 400 }
-      );
-    }
-
     const minDate = getMinDeliveryDate();
-    if (parsedDelivery < minDate) {
+    const selectedDate = new Date(deliveryDate);
+    if (Number.isNaN(selectedDate.getTime())) {
       return NextResponse.json(
-        {
-          error:
-            "到着希望日は本日から3日後以降の日付を選択してください。",
-        },
+        { error: "到着希望日が正しく入力されていません。" },
         { status: 400 }
       );
     }
-
-    const deliveryTimeNote =
-      typeof body.deliveryTimeNote === "string"
-        ? body.deliveryTimeNote.trim()
-        : null;
-
-    const agencyName =
-      typeof body.agencyName === "string" ? body.agencyName.trim() : null;
-
-    const createdByEmail =
-      typeof body.createdByEmail === "string"
-        ? body.createdByEmail.trim()
-        : null;
+    if (selectedDate < minDate) {
+      const minStr = minDate.toISOString().slice(0, 10);
+      return NextResponse.json(
+        { error: `到着希望日は ${minStr} 以降の日付を選択してください。` },
+        { status: 400 }
+      );
+    }
 
     const now = new Date();
 
@@ -265,23 +245,19 @@ export async function POST(request: NextRequest) {
     const dd = String(now.getDate()).padStart(2, "0");
     const datePart = `${yyyy}${mm}${dd}`;
 
-    // 当日分の件数をカウントして連番を付与
     const dayStart = new Date(now);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
 
-    const { count, error: countError } = await supabaseAdmin
+    const { count, error: countError } = await client
       .from("orders")
       .select("id", { count: "exact", head: true })
       .gte("created_at", dayStart.toISOString())
       .lt("created_at", dayEnd.toISOString());
 
     if (countError) {
-      console.error(
-        "[POST /api/mock-orders] orders count error",
-        countError
-      );
+      console.error("[/api/mock-orders POST] orders count error", countError);
       return NextResponse.json(
         { error: "注文番号の採番に失敗しました。" },
         { status: 500 }
@@ -291,15 +267,23 @@ export async function POST(request: NextRequest) {
     const seq = (count ?? 0) + 1;
     const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
 
-    // ===== 金額関連（ひとまず 0 で保存。あとで管理画面から編集する前提） =====
-    const unitPrice = 0;
-    const taxRate = 0;
-    const subtotal = 0;
-    const taxAmount = 0;
-    const totalAmount = 0;
+    // ===== 金額（とりあえず null / ざっくり計算） =====
+    const unitPrice: number | null =
+      typeof body.unitPrice === "number" ? body.unitPrice : null;
+    const taxRate: number | null =
+      typeof body.taxRate === "number" ? body.taxRate : null;
+
+    const subtotal =
+      unitPrice != null ? unitPrice * quantity : null;
+    const taxAmount =
+      subtotal != null && taxRate != null
+        ? Math.round(subtotal * (Number(taxRate) / 100))
+        : null;
+    const totalAmount =
+      subtotal != null && taxAmount != null ? subtotal + taxAmount : null;
 
     // ===== Supabase に保存 =====
-    const { data: inserted, error: insertError } = await supabaseAdmin
+    const { data, error: insertError } = await client
       .from("orders")
       .insert({
         order_number: orderNumber,
@@ -311,8 +295,8 @@ export async function POST(request: NextRequest) {
         phone_number: phoneNumber,
         delivery_date: deliveryDate,
         delivery_time_note: deliveryTimeNote,
-        agency_name: agencyName,
-        created_by_email: createdByEmail,
+        agency_name: agencyName ?? null,
+        created_by_email: createdByEmail ?? null,
         status: "pending",
         unit_price: unitPrice,
         tax_rate: taxRate,
@@ -320,96 +304,115 @@ export async function POST(request: NextRequest) {
         tax_amount: taxAmount,
         total_amount: totalAmount,
       })
-      .select()
+      .select(
+        `
+        id,
+        order_number,
+        product_name,
+        pieces_per_sheet,
+        quantity,
+        postal_and_address,
+        recipient_name,
+        phone_number,
+        delivery_date,
+        delivery_time_note,
+        agency_name,
+        created_by_email,
+        status,
+        unit_price,
+        tax_rate,
+        subtotal,
+        tax_amount,
+        total_amount,
+        created_at
+      `
+      )
       .single();
 
-    if (insertError || !inserted) {
-      console.error(
-        "[POST /api/mock-orders] orders insert error",
-        insertError
-      );
+    if (insertError) {
+      console.error("[/api/mock-orders POST] Supabase insert error:", insertError);
       return NextResponse.json(
-        { error: "注文の保存に失敗しました。" },
+        { error: `注文の保存に失敗しました: ${insertError.message}` },
         { status: 500 }
       );
     }
 
-    const order: MockOrder = {
-      id: inserted.id,
-      orderNumber,
-      productName,
-      piecesPerSheet,
-      quantity,
-      postalAndAddress,
-      recipientName,
-      phoneNumber,
-      deliveryDate,
-      deliveryTimeNote,
-      agencyName,
-      createdByEmail,
-      status: "pending",
-      createdAt: inserted.created_at,
+    const saved: MockOrder = {
+      id: data.id,
+      orderNumber: data.order_number,
+      productName: data.product_name ?? productName,
+      piecesPerSheet: data.pieces_per_sheet ?? piecesPerSheet,
+      quantity: data.quantity ?? quantity,
+      postalAndAddress: data.postal_and_address ?? postalAndAddress,
+      recipientName: data.recipient_name ?? recipientName,
+      phoneNumber: data.phone_number ?? phoneNumber,
+      deliveryDate: data.delivery_date ?? deliveryDate,
+      deliveryTimeNote: data.delivery_time_note ?? deliveryTimeNote,
+      agencyName: data.agency_name ?? agencyName,
+      createdByEmail: data.created_by_email ?? createdByEmail,
+      status: (data.status as OrderStatus) ?? "pending",
+      createdAt: data.created_at ?? now.toISOString(),
+      unitPrice: data.unit_price ?? unitPrice,
+      taxRate: data.tax_rate ?? taxRate,
+      subtotal: data.subtotal ?? subtotal,
+      taxAmount: data.tax_amount ?? taxAmount,
+      totalAmount: data.total_amount ?? totalAmount,
     };
 
-    console.log("[MOCK ORDER CREATED]", order);
-
-    // ===== ここからメール送信（仕入れ先向け・金額なし） =====
+    // ===== メール送信（SES or コンソールログ） =====
     const agencyLabel =
-      order.agencyName && order.agencyName.trim().length > 0
-        ? order.agencyName.trim()
+      saved.agencyName && saved.agencyName.trim().length > 0
+        ? saved.agencyName.trim()
         : "代理店名未設定";
 
-    const orderDateStr = order.createdAt.slice(0, 10); // YYYY-MM-DD
+    const orderDateStr = saved.createdAt.slice(0, 10);
 
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
     const mailLines: string[] = [];
-
     mailLines.push("いちご発注が登録されました。");
     mailLines.push("");
-    mailLines.push(`注文番号：${order.orderNumber}`);
+    mailLines.push(`注文番号：${saved.orderNumber}`);
     mailLines.push("");
     mailLines.push("【商品情報】");
-    mailLines.push(`いちごの種類：${order.productName}`);
-    mailLines.push(`玉数/シート：${order.piecesPerSheet ?? "-"}玉`);
-    mailLines.push(`シート数：${order.quantity}シート`);
+    mailLines.push(`いちごの種類：${saved.productName}`);
+    mailLines.push(`玉数/シート：${saved.piecesPerSheet ?? "-"}玉`);
+    mailLines.push(`シート数：${saved.quantity}シート`);
     mailLines.push("");
     mailLines.push("【お届け先】");
-    mailLines.push(`郵便番号・住所：${order.postalAndAddress}`);
-    mailLines.push(`お届け先氏名：${order.recipientName}`);
-    mailLines.push(`電話番号：${order.phoneNumber}`);
+    mailLines.push(`郵便番号・住所：${saved.postalAndAddress}`);
+    mailLines.push(`お届け先氏名：${saved.recipientName}`);
+    mailLines.push(`電話番号：${saved.phoneNumber}`);
     mailLines.push("");
     mailLines.push("【到着希望】");
-    mailLines.push(`希望到着日：${order.deliveryDate ?? "-"}`);
-    mailLines.push(`時間帯・メモ：${order.deliveryTimeNote ?? "-"}`);
+    mailLines.push(`希望到着日：${saved.deliveryDate ?? "-"}`);
+    mailLines.push(`時間帯・メモ：${saved.deliveryTimeNote ?? "-"}`);
     mailLines.push("");
     mailLines.push("【発注者】");
-    mailLines.push(`代理店名：${order.agencyName ?? "-"}`);
-    mailLines.push(`メールアドレス：${order.createdByEmail ?? "-"}`);
+    mailLines.push(`代理店名：${saved.agencyName ?? "-"}`);
+    mailLines.push(`メールアドレス：${saved.createdByEmail ?? "-"}`);
 
     const bodyText = mailLines.join("\n");
 
     if (ORDER_MAIL_MODE === "ses") {
+      const { sendOrderEmail } = await import("@/lib/ses");
       try {
         await sendOrderEmail({ subject, bodyText });
         console.log("[SES] Order mail sent", {
-          orderNumber: order.orderNumber,
+          orderNumber: saved.orderNumber,
         });
       } catch (err) {
         console.error("[SES] Failed to send order mail", err);
       }
     } else {
-      console.log("[MOCK EMAIL] 発注メール送信:", {
-        subject,
-        bodyText,
-      });
+      console.log("[MOCK EMAIL] 発注メール送信:", { subject, bodyText });
     }
 
-    return NextResponse.json({ ok: true, order });
-  } catch (error) {
-    console.error("[POST /api/mock-orders] error", error);
+    return NextResponse.json({ ok: true, order: saved });
+  } catch (error: any) {
+    console.error("[/api/mock-orders POST] Unexpected error:", error);
     return NextResponse.json(
-      { error: "注文の登録中にエラーが発生しました。" },
+      { error: error?.message ?? "注文の登録中にエラーが発生しました。" },
       { status: 500 }
     );
   }

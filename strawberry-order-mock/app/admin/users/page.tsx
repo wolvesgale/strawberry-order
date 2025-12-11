@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
 type Agency = {
   id: string;
@@ -12,7 +12,7 @@ type AdminUser = {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'agency';
+  role: "admin" | "agency";
   agencyId?: string | null;
   createdAt: string;
 };
@@ -29,11 +29,11 @@ export default function AdminUsersPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'admin' | 'agency'>('agency');
-  const [agencyId, setAgencyId] = useState<string>('');
-  const [newAgencyName, setNewAgencyName] = useState('');
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"admin" | "agency">("agency");
+  const [agencyId, setAgencyId] = useState<string>("");
+  const [newAgencyName, setNewAgencyName] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const agencyOptions = useMemo(() => agencies, [agencies]);
@@ -46,14 +46,14 @@ export default function AdminUsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/admin/users');
-      if (!res.ok) throw new Error('ユーザー情報の取得に失敗しました。');
+      const res = await fetch("/api/admin/users");
+      if (!res.ok) throw new Error("ユーザー情報の取得に失敗しました。");
       const data = (await res.json()) as FetchResponse;
       setAgencies(data.agencies || []);
       setUsers(data.users || []);
     } catch (e: any) {
       console.error(e);
-      setError(e.message || '読み込み中にエラーが発生しました。');
+      setError(e.message || "読み込み中にエラーが発生しました。");
     } finally {
       setLoading(false);
     }
@@ -63,9 +63,9 @@ export default function AdminUsersPage() {
     setError(null);
     setMessage(null);
     try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           email,
@@ -77,18 +77,18 @@ export default function AdminUsersPage() {
 
       if (!res.ok) {
         const json = await res.json().catch(() => null);
-        throw new Error(json?.error || 'ユーザー作成に失敗しました。');
+        throw new Error(json?.error || "ユーザー作成に失敗しました。");
       }
 
-      setName('');
-      setEmail('');
-      setRole('agency');
-      setAgencyId('');
-      setNewAgencyName('');
+      setName("");
+      setEmail("");
+      setRole("agency");
+      setAgencyId("");
+      setNewAgencyName("");
       await fetchData();
-      setMessage('ユーザーを作成しました。');
+      setMessage("ユーザーを作成しました。");
     } catch (e: any) {
-      setError(e.message || 'ユーザー作成に失敗しました。');
+      setError(e.message || "ユーザー作成に失敗しました。");
     }
   }
 
@@ -97,9 +97,9 @@ export default function AdminUsersPage() {
     setError(null);
     setMessage(null);
     try {
-      const res = await fetch('/api/admin/users', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: user.id,
           agencyId: user.agencyId ?? null,
@@ -109,13 +109,37 @@ export default function AdminUsersPage() {
 
       if (!res.ok) {
         const json = await res.json().catch(() => null);
-        throw new Error(json?.error || '更新に失敗しました。');
+        throw new Error(json?.error || "更新に失敗しました。");
       }
 
       await fetchData();
-      setMessage('ユーザー情報を更新しました。');
+      setMessage("ユーザー情報を更新しました。");
     } catch (e: any) {
-      setError(e.message || '更新に失敗しました。');
+      setError(e.message || "更新に失敗しました。");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleDelete(user: AdminUser) {
+    const ok = window.confirm(`ユーザー「${user.name}」を削除しますか？`);
+    if (!ok) return;
+
+    setSavingId(user.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || "ユーザーの削除に失敗しました。");
+      }
+      await fetchData();
+      setMessage("ユーザーを削除しました。");
+    } catch (e: any) {
+      setError(e.message || "ユーザーの削除に失敗しました。");
     } finally {
       setSavingId(null);
     }
@@ -180,7 +204,7 @@ export default function AdminUsersPage() {
               <select
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                 value={role}
-                onChange={(e) => setRole(e.target.value as 'admin' | 'agency')}
+                onChange={(e) => setRole(e.target.value as "admin" | "agency")}
               >
                 <option value="admin">admin</option>
                 <option value="agency">agency</option>
@@ -231,11 +255,15 @@ export default function AdminUsersPage() {
         <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-100">ユーザー一覧</h2>
-            {loading && <span className="text-xs text-slate-400">読み込み中...</span>}
+            {loading && (
+              <span className="text-xs text-slate-400">読み込み中...</span>
+            )}
           </div>
 
           {users.length === 0 ? (
-            <p className="text-xs text-slate-400">ユーザーがまだ登録されていません。</p>
+            <p className="text-xs text-slate-400">
+              ユーザーがまだ登録されていません。
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-xs text-slate-100">
@@ -255,6 +283,7 @@ export default function AdminUsersPage() {
                       user={u}
                       agencies={agencyOptions}
                       onUpdate={handleUpdate}
+                      onDelete={handleDelete}
                       saving={savingId === u.id}
                     />
                   ))}
@@ -272,28 +301,30 @@ function UserRow({
   user,
   agencies,
   onUpdate,
+  onDelete,
   saving,
 }: {
   user: AdminUser;
   agencies: Agency[];
   onUpdate: (user: AdminUser, inlineNewAgency: string) => Promise<void>;
+  onDelete: (user: AdminUser) => Promise<void>;
   saving: boolean;
 }) {
   const [selectedAgencyId, setSelectedAgencyId] = useState<string>(
-    user.agencyId ?? '',
+    user.agencyId ?? ""
   );
-  const [inlineNewAgency, setInlineNewAgency] = useState('');
+  const [inlineNewAgency, setInlineNewAgency] = useState("");
 
   useEffect(() => {
-    setSelectedAgencyId(user.agencyId ?? '');
+    setSelectedAgencyId(user.agencyId ?? "");
   }, [user.agencyId]);
 
   async function handleSave() {
     await onUpdate(
       { ...user, agencyId: selectedAgencyId || null },
-      inlineNewAgency,
+      inlineNewAgency
     );
-    setInlineNewAgency('');
+    setInlineNewAgency("");
   }
 
   return (
@@ -330,14 +361,22 @@ function UserRow({
           />
         </div>
       </td>
-      <td className="px-3 py-2">
+      <td className="px-3 py-2 space-x-2">
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
           className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
         >
-          {saving ? '保存中...' : '保存'}
+          {saving ? "保存中..." : "保存"}
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(user)}
+          disabled={saving}
+          className="inline-flex items-center rounded-md bg-red-500 px-3 py-1.5 text-xs font-semibold text-slate-50 hover:bg-red-400 disabled:opacity-60"
+        >
+          削除
         </button>
       </td>
     </tr>
