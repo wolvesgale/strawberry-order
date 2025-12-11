@@ -1,3 +1,4 @@
+// strawberry-order-mock/app/orders/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -90,7 +91,9 @@ export default function AgencyOrdersPage() {
       }
 
       if (!profile?.agency_id) {
-        setError("代理店情報が設定されていません。管理者にお問い合わせください。");
+        setError(
+          "代理店情報が設定されていません。管理者にお問い合わせください。"
+        );
         return;
       }
 
@@ -126,8 +129,9 @@ export default function AgencyOrdersPage() {
       setLoading(true);
       setError(null);
       try {
+        const encodedAgencyName = encodeURIComponent(agencyName ?? "");
         const res = await fetch(
-          `/api/mock-orders?agencyName=${encodeURIComponent(agencyName)}`,
+          `/api/mock-orders?agencyName=${encodedAgencyName}`,
           { cache: "no-store" }
         );
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
