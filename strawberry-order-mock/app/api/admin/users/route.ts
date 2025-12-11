@@ -15,8 +15,7 @@ type AgencyRow = {
 
 type ProfileRow = {
   id: string;
-  name: string | null;
-  email: string | null;
+  display_name: string | null;
   role: string | null;
   agency_id: string | null;
   created_at: string | null;
@@ -40,7 +39,7 @@ type AdminUsersApiResponse = {
 function ensureSupabase() {
   if (!supabaseAdmin) {
     console.error(
-      "[/api/admin/users] supabaseAdmin is null. Check SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY."
+      "[/api/admin/users] supabaseAdmin is null. Check SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.",
     );
     return null;
   }
@@ -53,11 +52,12 @@ export async function GET() {
   if (!client) {
     return NextResponse.json(
       { error: "サーバー設定エラーです。管理者にお問い合わせください。" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
   try {
+    // ① 代理店一覧
     const { data: agenciesData, error: agenciesError } = await client
       .from("agencies")
       .select("id, name, code, created_at")
@@ -67,37 +67,59 @@ export async function GET() {
       console.error("[/api/admin/users GET] agencies error:", agenciesError);
       return NextResponse.json(
         { error: `代理店一覧の取得に失敗しました: ${agenciesError.message}` },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     const agencies = (agenciesData ?? []) as AgencyRow[];
 
+    // ② profiles（display_name を利用）
     const { data: profilesData, error: profilesError } = await client
       .from("profiles")
-      .select("id, name, email, role, agency_id, created_at")
+      .select("id, display_name, role, agency_id, created_at")
       .order("created_at", { ascending: true });
 
     if (profilesError) {
       console.error("[/api/admin/users GET] profiles error:", profilesError);
       return NextResponse.json(
         { error: `ユーザー一覧の取得に失敗しました: ${profilesError.message}` },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     const profiles = (profilesData ?? []) as ProfileRow[];
 
+    // ③ Auth ユーザー（メールアドレス取得用）
+    const { data: authData, error: authError } =
+      await client.auth.admin.listUsers();
+
+    if (authError) {
+      console.error("[/api/admin/users GET] auth listUsers error:", authError);
+      return NextResponse.json(
+        { error: "ユーザー一覧の取得に失敗しました。(auth)" },
+        { status: 500 },
+      );
+    }
+
+    const emailById = new Map<string, string>();
+    for (const u of authData?.users ?? []) {
+      emailById.set(u.id, u.email ?? "");
+    }
+
+    // ④ profiles × agencies × auth.users をマージして画面用に整形
     const users: AdminUser[] = profiles.map((p) => {
       const agency =
         p.agency_id != null
           ? agencies.find((a) => a.id === p.agency_id) ?? null
           : null;
 
+      const email = emailById.get(p.id) ?? "";
+
       return {
         id: p.id,
-        name: p.name ?? "",
-        email: p.email ?? "",
+        // ← display_name を「名前」として扱う
+        name: p.display_name ?? "",
+        email,
         role: (p.role as Role) ?? "agency",
         agencyId: p.agency_id,
         agencyName: agency?.name ?? null,
@@ -115,7 +137,7 @@ export async function GET() {
     console.error("[/api/admin/users GET] Unexpected error:", error);
     return NextResponse.json(
       { error: "ユーザー情報の取得中にエラーが発生しました。" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -126,7 +148,7 @@ export async function POST(request: NextRequest) {
   if (!client) {
     return NextResponse.json(
       { error: "サーバー設定エラーです。管理者にお問い合わせください。" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -148,14 +170,14 @@ export async function POST(request: NextRequest) {
     if (!name) {
       return NextResponse.json(
         { error: "名前が入力されていません。" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!email) {
       return NextResponse.json(
         { error: "メールアドレスが入力されていません。" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -163,7 +185,7 @@ export async function POST(request: NextRequest) {
     if (!allowedRoles.includes(role)) {
       return NextResponse.json(
         { error: "不正なロールが指定されています。" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -174,7 +196,7 @@ export async function POST(request: NextRequest) {
           error:
             "代理店ユーザーの場合、所属代理店か新しい代理店名を入力してください。",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -192,11 +214,11 @@ export async function POST(request: NextRequest) {
       if (insertAgencyError) {
         console.error(
           "[/api/admin/users POST] insert agency error:",
-          insertAgencyError
+          insertAgencyError,
         );
         return NextResponse.json(
           { error: `代理店の作成に失敗しました: ${insertAgencyError.message}` },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -218,33 +240,33 @@ export async function POST(request: NextRequest) {
       console.error("[/api/admin/users POST] createUser error:", authError);
       return NextResponse.json(
         { error: `Authユーザーの作成に失敗しました: ${authError?.message}` },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     const authUser = authData.user;
 
     // profiles へ紐付けレコード作成
+    // ※ name/email カラムは存在しないので display_name のみ保存
     const { data: profile, error: profileError } = await client
       .from("profiles")
       .insert({
         id: authUser.id,
-        name,
-        email,
+        display_name: name,
         role,
         agency_id: agencyId,
       })
-      .select("id, name, email, role, agency_id, created_at")
+      .select("id, display_name, role, agency_id, created_at")
       .single();
 
     if (profileError || !profile) {
       console.error(
         "[/api/admin/users POST] insert profile error:",
-        profileError
+        profileError,
       );
       return NextResponse.json(
         { error: `プロフィール作成に失敗しました: ${profileError?.message}` },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -257,7 +279,7 @@ export async function POST(request: NextRequest) {
     if (agenciesError) {
       console.error(
         "[/api/admin/users POST] agencies reload error:",
-        agenciesError
+        agenciesError,
       );
     }
 
@@ -270,8 +292,8 @@ export async function POST(request: NextRequest) {
 
     const user: AdminUser = {
       id: profile.id,
-      name: profile.name ?? "",
-      email: profile.email ?? "",
+      name: profile.display_name ?? "",
+      email, // ここは作成時に使ったメールをそのまま返す
       role: (profile.role as Role) ?? "agency",
       agencyId: profile.agency_id,
       agencyName: agency?.name ?? null,
@@ -289,7 +311,7 @@ export async function POST(request: NextRequest) {
     console.error("[/api/admin/users POST] Unexpected error:", error);
     return NextResponse.json(
       { error: "ユーザー作成中にエラーが発生しました。" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
