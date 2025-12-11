@@ -1,384 +1,342 @@
+// strawberry-order-mock/app/admin/users/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, FormEvent } from "react";
+import Link from "next/link";
+import { supabase } from "../../../lib/supabaseClient";
+
+type Role = "admin" | "agency";
 
 type Agency = {
   id: string;
   name: string;
   code: string;
+  createdAt: string;
 };
 
-type AdminUser = {
+type AdminUserSummary = {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "agency";
+  role: Role;
   agencyId?: string | null;
   createdAt: string;
 };
 
-type FetchResponse = {
+type AdminUsersApiResponse = {
   agencies: Agency[];
-  users: AdminUser[];
+  users: AdminUserSummary[];
 };
 
 export default function AdminUsersPage() {
+  // ログインメール表示用
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+
+  // 一覧データ
   const [agencies, setAgencies] = useState<Agency[]>([]);
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<AdminUserSummary[]>([]);
+
+  // 新規作成フォーム
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Role>("agency");
+  const [selectedAgencyId, setSelectedAgencyId] = useState<string>("");
+  const [newAgencyName, setNewAgencyName] = useState("");
+
+  // UI状態
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "agency">("agency");
-  const [agencyId, setAgencyId] = useState<string>("");
-  const [newAgencyName, setNewAgencyName] = useState("");
-  const [savingId, setSavingId] = useState<string | null>(null);
-
-  const agencyOptions = useMemo(() => agencies, [agencies]);
-
+  // ログインユーザー情報取得
   useEffect(() => {
-    fetchData();
+    async function fetchSession() {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        console.error("supabase auth error", error);
+      }
+      setSessionEmail(data?.user?.email ?? null);
+    }
+    fetchSession();
   }, []);
 
-  async function fetchData() {
+  // 一覧取得
+  async function fetchAdminData() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/users");
-      if (!res.ok) throw new Error("ユーザー情報の取得に失敗しました。");
-      const data = (await res.json()) as FetchResponse;
-      setAgencies(data.agencies || []);
-      setUsers(data.users || []);
+      const res = await fetch("/api/admin/users", { cache: "no-store" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error ?? "ユーザー一覧の取得に失敗しました。");
+      }
+      const json = (await res.json()) as AdminUsersApiResponse;
+      setAgencies(json.agencies ?? []);
+      setUsers(json.users ?? []);
     } catch (e: any) {
       console.error(e);
-      setError(e.message || "読み込み中にエラーが発生しました。");
+      setError(e.message ?? "ユーザー一覧の取得に失敗しました。");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleCreate() {
+  useEffect(() => {
+    fetchAdminData();
+  }, []);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
     setError(null);
     setMessage(null);
+
+    if (!name.trim()) {
+      setError("名前を入力してください。");
+      return;
+    }
+    if (!email.trim()) {
+      setError("メールアドレスを入力してください。");
+      return;
+    }
+
+    if (role === "agency") {
+      if (!selectedAgencyId && !newAgencyName.trim()) {
+        setError(
+          "ロールが代理店の場合、既存代理店を選択するか新規代理店名を入力してください。"
+        );
+        return;
+      }
+    }
+
+    setSubmitting(true);
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
-          email,
+          name: name.trim(),
+          email: email.trim(),
           role,
-          agencyId: agencyId || null,
-          newAgencyName: newAgencyName || undefined,
+          agencyId: selectedAgencyId || null,
+          newAgencyName: newAgencyName.trim() || null,
         }),
       });
 
+      const json = await res.json().catch(() => null);
       if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error || "ユーザー作成に失敗しました。");
+        throw new Error(json?.error ?? "ユーザー作成に失敗しました。");
       }
 
+      setMessage("ユーザーを作成しました。初期パスワードは共通値が設定されています。");
+
+      // フォームリセット
       setName("");
       setEmail("");
       setRole("agency");
-      setAgencyId("");
+      setSelectedAgencyId("");
       setNewAgencyName("");
-      await fetchData();
-      setMessage("ユーザーを作成しました。");
+
+      // 一覧再取得
+      await fetchAdminData();
     } catch (e: any) {
-      setError(e.message || "ユーザー作成に失敗しました。");
-    }
-  }
-
-  async function handleUpdate(user: AdminUser, inlineNewAgency: string) {
-    setSavingId(user.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/admin/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: user.id,
-          agencyId: user.agencyId ?? null,
-          newAgencyName: inlineNewAgency || undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error || "更新に失敗しました。");
-      }
-
-      await fetchData();
-      setMessage("ユーザー情報を更新しました。");
-    } catch (e: any) {
-      setError(e.message || "更新に失敗しました。");
+      console.error(e);
+      setError(e.message ?? "ユーザー作成に失敗しました。");
     } finally {
-      setSavingId(null);
+      setSubmitting(false);
     }
   }
 
-  async function handleDelete(user: AdminUser) {
-    const ok = window.confirm(`ユーザー「${user.name}」を削除しますか？`);
-    if (!ok) return;
-
-    setSavingId(user.id);
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await fetch(`/api/admin/users/${user.id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error || "ユーザーの削除に失敗しました。");
-      }
-      await fetchData();
-      setMessage("ユーザーを削除しました。");
-    } catch (e: any) {
-      setError(e.message || "ユーザーの削除に失敗しました。");
-    } finally {
-      setSavingId(null);
-    }
-  }
+  const agencyMap = new Map<string, Agency>();
+  agencies.forEach((a) => agencyMap.set(a.id, a));
 
   return (
-    <main className="min-h-screen bg-slate-950">
-      <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
-        <header className="flex items-center justify-between">
+    <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
+      <div className="max-w-5xl mx-auto space-y-8">
+        {/* ヘッダー */}
+        <header className="space-y-2 sm:flex sm:items-start sm:justify-between sm:space-y-0">
           <div>
-            <h1 className="text-xl font-bold text-slate-50">ユーザー管理</h1>
-            <p className="text-xs text-slate-400">
+            <h1 className="text-2xl font-bold tracking-tight">ユーザー管理</h1>
+            <p className="text-sm text-slate-400">
               ユーザーのロールと所属代理店を管理します。新しい代理店もここから追加できます。
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              ログインメール：{sessionEmail ?? "未ログイン"}
+            </p>
+            <Link
+              href="/admin/orders"
+              className="mt-2 inline-flex items-center text-xs text-emerald-300 hover:text-emerald-200 underline underline-offset-4"
+            >
+              注文一覧へ戻る
+            </Link>
           </div>
-          <a
-            href="/admin/orders"
-            className="text-xs text-slate-300 underline hover:text-slate-100"
-          >
-            注文一覧へ戻る
-          </a>
+
+          {message && (
+            <p className="mt-3 sm:mt-0 text-xs sm:text-sm text-emerald-100 bg-emerald-900/40 border border-emerald-700 rounded-md px-3 py-2 max-w-xs">
+              {message}
+            </p>
+          )}
         </header>
 
-        {message && (
-          <p className="rounded-md border border-emerald-700 bg-emerald-900/40 px-3 py-2 text-sm text-emerald-100">
-            {message}
-          </p>
-        )}
+        {/* 新規ユーザー作成フォーム */}
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg space-y-4">
+          <h2 className="text-lg font-semibold text-slate-100">
+            新規ユーザー作成
+          </h2>
 
-        {error && (
-          <p className="rounded-md border border-red-700 bg-red-900/40 px-3 py-2 text-sm text-red-100">
-            {error}
-          </p>
-        )}
-
-        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-4">
-          <h2 className="text-sm font-semibold text-slate-100">新規ユーザー作成</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <form
+            onSubmit={handleSubmit}
+            className="grid gap-4 md:grid-cols-2 md:gap-6"
+          >
             <div className="space-y-1">
-              <label className="block text-xs text-slate-300">名前</label>
+              <label className="block text-xs font-medium text-slate-200">
+                名前
+              </label>
               <input
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="例）山田 太郎"
+                placeholder="例）古田 貴香"
               />
             </div>
+
             <div className="space-y-1">
-              <label className="block text-xs text-slate-300">メール</label>
+              <label className="block text-xs font-medium text-slate-200">
+                メール
+              </label>
               <input
+                type="email"
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="example@example.com"
+                placeholder="例）user@example.com"
               />
             </div>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <label className="block text-xs text-slate-300">ロール</label>
+              <label className="block text-xs font-medium text-slate-200">
+                ロール
+              </label>
               <select
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                 value={role}
-                onChange={(e) => setRole(e.target.value as "admin" | "agency")}
+                onChange={(e) => setRole(e.target.value as Role)}
               >
-                <option value="admin">admin</option>
-                <option value="agency">agency</option>
+                <option value="agency">agency（代理店）</option>
+                <option value="admin">admin（管理者）</option>
               </select>
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs text-slate-300">所属代理店</label>
+            {/* 代理店関連 */}
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-slate-200">
+                所属代理店（任意）
+              </label>
               <select
                 className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={agencyId}
-                onChange={(e) => setAgencyId(e.target.value)}
+                value={selectedAgencyId}
+                onChange={(e) => setSelectedAgencyId(e.target.value)}
+                disabled={role !== "agency"}
               >
                 <option value="">(未設定)</option>
-                {agencyOptions.map((a) => (
+                {agencies.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
                   </option>
                 ))}
               </select>
+              <p className="text-[11px] text-slate-500">
+                代理店ロールの場合、既存代理店を選択するか下の「新しい代理店名」を入力してください。
+              </p>
             </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="block text-xs text-slate-300">新しい代理店名（任意）</label>
-            <input
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-              value={newAgencyName}
-              onChange={(e) => setNewAgencyName(e.target.value)}
-              placeholder="例）前田"
-            />
-            <p className="text-[11px] text-slate-500">
-              入力すると新しい代理店を作成し、その代理店に紐付けてユーザーを作成します。
+            <div className="space-y-1 md:col-span-2">
+              <label className="block text-xs font-medium text-slate-200">
+                新しい代理店名（任意）
+              </label>
+              <input
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={newAgencyName}
+                onChange={(e) => setNewAgencyName(e.target.value)}
+                placeholder="例）いちごの香り"
+                disabled={role !== "agency"}
+              />
+            </div>
+
+            <div className="md:col-span-2 pt-2">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60 disabled:hover:bg-emerald-500"
+              >
+                {submitting ? "作成中..." : "作成する"}
+              </button>
+            </div>
+          </form>
+
+          {error && (
+            <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
+              {error}
             </p>
-          </div>
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={handleCreate}
-              className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
-            >
-              作成する
-            </button>
-          </div>
+          )}
         </section>
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-3">
+        {/* ユーザー一覧 */}
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-100">ユーザー一覧</h2>
+            <h2 className="text-lg font-semibold text-slate-100">
+              ユーザー一覧
+            </h2>
             {loading && (
               <span className="text-xs text-slate-400">読み込み中...</span>
             )}
           </div>
 
-          {users.length === 0 ? (
-            <p className="text-xs text-slate-400">
-              ユーザーがまだ登録されていません。
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs text-slate-100">
-                <thead className="bg-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-slate-800">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-900">
+                <tr className="text-xs text-slate-400">
+                  <th className="px-3 py-2 text-left font-medium">名前</th>
+                  <th className="px-3 py-2 text-left font-medium">メール</th>
+                  <th className="px-3 py-2 text-left font-medium">ロール</th>
+                  <th className="px-3 py-2 text-left font-medium">代理店</th>
+                  <th className="px-3 py-2 text-left font-medium">作成日時</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {users.map((u) => {
+                  const agency = u.agencyId
+                    ? agencyMap.get(u.agencyId) ?? null
+                    : null;
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-900/60">
+                      <td className="px-3 py-2 text-slate-100">{u.name}</td>
+                      <td className="px-3 py-2 text-slate-200">{u.email}</td>
+                      <td className="px-3 py-2 text-slate-200">{u.role}</td>
+                      <td className="px-3 py-2 text-slate-200">
+                        {agency ? agency.name : "-"}
+                      </td>
+                      <td className="px-3 py-2 text-slate-400 text-xs">
+                        {u.createdAt?.slice(0, 19).replace("T", " ") ?? "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {users.length === 0 && !loading && (
                   <tr>
-                    <th className="px-3 py-2 text-left">名前</th>
-                    <th className="px-3 py-2 text-left">メール</th>
-                    <th className="px-3 py-2 text-left">ロール</th>
-                    <th className="px-3 py-2 text-left">所属代理店</th>
-                    <th className="px-3 py-2 text-left">操作</th>
+                    <td
+                      colSpan={5}
+                      className="px-3 py-4 text-center text-xs text-slate-500"
+                    >
+                      まだユーザーが登録されていません。
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => (
-                    <UserRow
-                      key={u.id}
-                      user={u}
-                      agencies={agencyOptions}
-                      onUpdate={handleUpdate}
-                      onDelete={handleDelete}
-                      saving={savingId === u.id}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     </main>
-  );
-}
-
-function UserRow({
-  user,
-  agencies,
-  onUpdate,
-  onDelete,
-  saving,
-}: {
-  user: AdminUser;
-  agencies: Agency[];
-  onUpdate: (user: AdminUser, inlineNewAgency: string) => Promise<void>;
-  onDelete: (user: AdminUser) => Promise<void>;
-  saving: boolean;
-}) {
-  const [selectedAgencyId, setSelectedAgencyId] = useState<string>(
-    user.agencyId ?? ""
-  );
-  const [inlineNewAgency, setInlineNewAgency] = useState("");
-
-  useEffect(() => {
-    setSelectedAgencyId(user.agencyId ?? "");
-  }, [user.agencyId]);
-
-  async function handleSave() {
-    await onUpdate(
-      { ...user, agencyId: selectedAgencyId || null },
-      inlineNewAgency
-    );
-    setInlineNewAgency("");
-  }
-
-  return (
-    <tr className="border-t border-slate-800">
-      <td className="px-3 py-2">
-        <div className="font-medium text-slate-100">{user.name}</div>
-        <div className="text-[10px] text-slate-500">{user.id}</div>
-      </td>
-      <td className="px-3 py-2 text-slate-200">{user.email}</td>
-      <td className="px-3 py-2">
-        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-100">
-          {user.role}
-        </span>
-      </td>
-      <td className="px-3 py-2">
-        <div className="space-y-2">
-          <select
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-            value={selectedAgencyId}
-            onChange={(e) => setSelectedAgencyId(e.target.value)}
-          >
-            <option value="">(未設定)</option>
-            {agencies.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-          <input
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-            value={inlineNewAgency}
-            onChange={(e) => setInlineNewAgency(e.target.value)}
-            placeholder="新しい代理店名を追加"
-          />
-        </div>
-      </td>
-      <td className="px-3 py-2 space-x-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
-        >
-          {saving ? "保存中..." : "保存"}
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(user)}
-          disabled={saving}
-          className="inline-flex items-center rounded-md bg-red-500 px-3 py-1.5 text-xs font-semibold text-slate-50 hover:bg-red-400 disabled:opacity-60"
-        >
-          削除
-        </button>
-      </td>
-    </tr>
   );
 }
