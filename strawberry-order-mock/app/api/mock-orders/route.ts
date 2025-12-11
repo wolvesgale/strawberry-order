@@ -1,6 +1,7 @@
 // app/api/mock-orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { sendOrderEmail } from "@/lib/ses";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
@@ -22,27 +23,8 @@ export type MockOrder = {
   status: OrderStatus;
   createdAt: string;
 };
-const PRODUCT_NAME_MAP: Record<string, string> = {
-  p1: "夏いちご",
-  p2: "夏秋いちご",
-  p3: "冬いちご",
-  p4: "プレミアムいちご詰め合わせ",
-};
 
-function resolveProductName(idOrLabel: string): string {
-  if (!idOrLabel) return "商品名未設定";
-  // p1 などのIDならラベルに変換、それ以外の文字列はそのまま使う
-  return PRODUCT_NAME_MAP[idOrLabel] ?? idOrLabel;
-}
-
-// ひとまずメモリ上で保持（本番では Supabase などに差し替え予定）
-const orders: MockOrder[] = [];
-
-function generateId(): string {
-  return `${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
-}
+const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
 // 本日から 3 日後 0:00
 function getMinDeliveryDate(): Date {
@@ -52,46 +34,125 @@ function getMinDeliveryDate(): Date {
   return d;
 }
 
-const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
-
 export async function GET() {
-  return NextResponse.json({ orders });
+  // ★ ここで null ガード
+  if (!supabaseAdmin) {
+    console.error(
+      "[GET /api/mock-orders] Supabase admin client is not configured"
+    );
+    return NextResponse.json(
+      {
+        error: "サーバー設定エラーが発生しました。",
+        orders: [],
+      },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("orders")
+      .select(
+        `
+          id,
+          order_number,
+          product_name,
+          pieces_per_sheet,
+          quantity,
+          postal_and_address,
+          recipient_name,
+          phone_number,
+          delivery_date,
+          delivery_time_note,
+          agency_name,
+          created_by_email,
+          status,
+          created_at
+        `
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[GET /api/mock-orders] orders select error", error);
+      return NextResponse.json(
+        { error: "注文一覧の取得に失敗しました。" },
+        { status: 500 }
+      );
+    }
+
+    const orders: MockOrder[] =
+      (data ?? []).map((row: any) => ({
+        id: row.id,
+        orderNumber: row.order_number,
+        productName: row.product_name ?? "",
+        piecesPerSheet: row.pieces_per_sheet ?? null,
+        quantity: row.quantity ?? 0,
+        postalAndAddress: row.postal_and_address ?? "",
+        recipientName: row.recipient_name ?? "",
+        phoneNumber: row.phone_number ?? "",
+        deliveryDate: row.delivery_date ?? null,
+        deliveryTimeNote: row.delivery_time_note ?? null,
+        agencyName: row.agency_name ?? null,
+        createdByEmail: row.created_by_email ?? null,
+        status: (row.status as OrderStatus) ?? "pending",
+        createdAt: row.created_at,
+      })) ?? [];
+
+    return NextResponse.json({ orders });
+  } catch (error) {
+    console.error("[GET /api/mock-orders] unexpected error", error);
+    return NextResponse.json(
+      { error: "注文一覧の取得中にエラーが発生しました。" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
+  // ★ ここでも null ガード
+  if (!supabaseAdmin) {
+    console.error(
+      "[POST /api/mock-orders] Supabase admin client is not configured"
+    );
+    return NextResponse.json(
+      { error: "サーバー設定エラーが発生しました。" },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = (await request.json()) as any;
     console.log("[MOCK ORDER BODY]", body);
 
-// ===== いちごの種類（productName） =====
-const rawProduct =
-  body.product ??
-  body.selectedProduct ??
-  body.productId ??
-  body.productName ??
-  body.strawberryType ??
-  body.strawberry;
+    // ===== いちごの種類（productName） =====
+    const rawProduct =
+      body.product ??
+      body.selectedProduct ??
+      body.productId ??
+      body.productName ??
+      body.strawberryType ??
+      body.strawberry;
 
-let productNameRaw = "";
+    let productName = "";
 
-if (typeof rawProduct === "string") {
-  productNameRaw = rawProduct.trim();
-} else if (rawProduct && typeof rawProduct === "object") {
-  const candidate =
-    rawProduct.name ??
-    rawProduct.label ??
-    rawProduct.text ??
-    rawProduct.title ??
-    rawProduct.id;
+    if (typeof rawProduct === "string") {
+      productName = rawProduct.trim();
+    } else if (rawProduct && typeof rawProduct === "object") {
+      const candidate =
+        rawProduct.name ??
+        rawProduct.label ??
+        rawProduct.text ??
+        rawProduct.title ??
+        rawProduct.id;
 
-  if (typeof candidate === "string" || typeof candidate === "number") {
-    productNameRaw = String(candidate).trim();
-  }
-}
+      if (typeof candidate === "string" || typeof candidate === "number") {
+        productName = String(candidate).trim();
+      }
+    }
 
-// ★ここで p1 → 「夏いちご」などに変換
-const productName = resolveProductName(productNameRaw);
-
+    if (!productName) {
+      productName = "商品名未設定";
+    }
 
     // ===== 1シートあたりの玉数 =====
     const piecesRaw =
@@ -198,14 +259,84 @@ const productName = resolveProductName(productNameRaw);
 
     const now = new Date();
 
+    // ===== 注文番号（ORD-YYYYMMDD-XXXX） =====
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const datePart = `${yyyy}${mm}${dd}`;
+
+    // 当日分の件数をカウントして連番を付与
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const { count, error: countError } = await supabaseAdmin
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", dayStart.toISOString())
+      .lt("created_at", dayEnd.toISOString());
+
+    if (countError) {
+      console.error(
+        "[POST /api/mock-orders] orders count error",
+        countError
+      );
+      return NextResponse.json(
+        { error: "注文番号の採番に失敗しました。" },
+        { status: 500 }
+      );
+    }
+
+    const seq = (count ?? 0) + 1;
+    const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
+
+    // ===== 金額関連（ひとまず 0 で保存。あとで管理画面から編集する前提） =====
+    const unitPrice = 0;
+    const taxRate = 0;
+    const subtotal = 0;
+    const taxAmount = 0;
+    const totalAmount = 0;
+
+    // ===== Supabase に保存 =====
+    const { data: inserted, error: insertError } = await supabaseAdmin
+      .from("orders")
+      .insert({
+        order_number: orderNumber,
+        product_name: productName,
+        pieces_per_sheet: piecesPerSheet,
+        quantity,
+        postal_and_address: postalAndAddress,
+        recipient_name: recipientName,
+        phone_number: phoneNumber,
+        delivery_date: deliveryDate,
+        delivery_time_note: deliveryTimeNote,
+        agency_name: agencyName,
+        created_by_email: createdByEmail,
+        status: "pending",
+        unit_price: unitPrice,
+        tax_rate: taxRate,
+        subtotal,
+        tax_amount: taxAmount,
+        total_amount: totalAmount,
+      })
+      .select()
+      .single();
+
+    if (insertError || !inserted) {
+      console.error(
+        "[POST /api/mock-orders] orders insert error",
+        insertError
+      );
+      return NextResponse.json(
+        { error: "注文の保存に失敗しました。" },
+        { status: 500 }
+      );
+    }
+
     const order: MockOrder = {
-      id: generateId(),
-      // ★ここを ORD プレフィックスに変更
-      orderNumber: `ORD-${now.getFullYear()}${String(
-        now.getMonth() + 1
-      ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(
-        orders.length + 1
-      ).padStart(4, "0")}`,
+      id: inserted.id,
+      orderNumber,
       productName,
       piecesPerSheet,
       quantity,
@@ -217,10 +348,8 @@ const productName = resolveProductName(productNameRaw);
       agencyName,
       createdByEmail,
       status: "pending",
-      createdAt: now.toISOString(),
+      createdAt: inserted.created_at,
     };
-
-    orders.unshift(order);
 
     console.log("[MOCK ORDER CREATED]", order);
 
@@ -232,7 +361,6 @@ const productName = resolveProductName(productNameRaw);
 
     const orderDateStr = order.createdAt.slice(0, 10); // YYYY-MM-DD
 
-    // 件名：代理店名 + 発注日（※「モック」表記や単価は出さない）
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
     const mailLines: string[] = [];
