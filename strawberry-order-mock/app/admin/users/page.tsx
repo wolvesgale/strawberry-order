@@ -22,6 +22,13 @@ type FetchResponse = {
   users: AdminUser[];
 };
 
+type CreatePayload = {
+  displayName: string;
+  email: string;
+  role: 'admin' | 'agency';
+  agencyId: string | null;
+};
+
 export default function AdminUsersPage() {
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -30,6 +37,12 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const [newDisplayName, setNewDisplayName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newRole, setNewRole] = useState<'admin' | 'agency'>('agency');
+  const [newAgencyId, setNewAgencyId] = useState<string>('');
 
   const agencyOptions = useMemo(() => agencies, [agencies]);
 
@@ -54,18 +67,58 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleUpdate(user: AdminUser, inlineNewAgency: string) {
+  async function handleCreate(payload: CreatePayload) {
+    setCreating(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || '作成に失敗しました。');
+      }
+
+      const json = await res.json();
+      const createdUser = json.user as AdminUser;
+      setUsers((prev) => [createdUser, ...prev]);
+      setMessage(
+        `ユーザーを作成しました。初期パスワード: ${json.initialPassword ?? '生成に失敗しました'}`,
+      );
+      setNewDisplayName('');
+      setNewEmail('');
+      setNewRole('agency');
+      setNewAgencyId('');
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || '作成に失敗しました。');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleUpdate(user: AdminUser) {
+    if (!user.displayName.trim()) {
+      setError('名前を入力してください。');
+      return;
+    }
     setSavingId(user.id);
     setError(null);
     setMessage(null);
     try {
       const res = await fetch('/api/admin/users', {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: user.id,
+          displayName: user.displayName,
+          role: user.role,
           agencyId: user.agencyId ?? null,
-          newAgencyName: inlineNewAgency || undefined,
         }),
       });
 
@@ -74,10 +127,40 @@ export default function AdminUsersPage() {
         throw new Error(json?.error || '更新に失敗しました。');
       }
 
-      await fetchData();
+      const json = await res.json();
+      const updatedUser = json.user as AdminUser;
+
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
       setMessage('ユーザー情報を更新しました。');
     } catch (e: any) {
+      console.error(e);
       setError(e.message || '更新に失敗しました。');
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function handleDelete(userId: string) {
+    if (!window.confirm('ユーザーを削除しますか？')) return;
+    setSavingId(userId);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const res = await fetch(`/api/admin/users?id=${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || '削除に失敗しました。');
+      }
+
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setMessage('ユーザーを削除しました。');
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || '削除に失敗しました。');
     } finally {
       setSavingId(null);
     }
@@ -115,9 +198,73 @@ export default function AdminUsersPage() {
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-2">
           <h2 className="text-sm font-semibold text-slate-100">新規ユーザー作成</h2>
-          <p className="text-xs text-slate-400">
-            新規ユーザー作成は現在、Supabase ダッシュボードからのみ行っています。この画面では既存ユーザーの所属代理店のみ更新できます。
-          </p>
+          <form
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleCreate({
+                displayName: newDisplayName,
+                email: newEmail,
+                role: newRole,
+                agencyId: newAgencyId || null,
+              });
+            }}
+          >
+            <label className="text-xs text-slate-200 space-y-1">
+              <span className="block">名前</span>
+              <input
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={newDisplayName}
+                onChange={(e) => setNewDisplayName(e.target.value)}
+                required
+              />
+            </label>
+            <label className="text-xs text-slate-200 space-y-1">
+              <span className="block">メールアドレス</span>
+              <input
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                type="email"
+                required
+              />
+            </label>
+            <label className="text-xs text-slate-200 space-y-1">
+              <span className="block">ロール</span>
+              <select
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as 'admin' | 'agency')}
+              >
+                <option value="admin">admin</option>
+                <option value="agency">agency</option>
+              </select>
+            </label>
+            <label className="text-xs text-slate-200 space-y-1">
+              <span className="block">所属代理店</span>
+              <select
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={newAgencyId}
+                onChange={(e) => setNewAgencyId(e.target.value)}
+              >
+                <option value="">(未設定)</option>
+                {agencies.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="sm:col-span-2 lg:col-span-4 flex items-end justify-end">
+              <button
+                type="submit"
+                disabled={creating}
+                className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+              >
+                {creating ? '作成中...' : '作成する'}
+              </button>
+            </div>
+          </form>
         </section>
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-3">
@@ -142,14 +289,15 @@ export default function AdminUsersPage() {
                 </thead>
                 <tbody>
                   {users.map((u) => (
-                    <UserRow
-                      key={u.id}
-                      user={u}
-                      agencies={agencyOptions}
-                      onUpdate={handleUpdate}
-                      saving={savingId === u.id}
-                    />
-                  ))}
+                  <UserRow
+                    key={u.id}
+                    user={u}
+                    agencies={agencyOptions}
+                    onUpdate={handleUpdate}
+                    onDelete={handleDelete}
+                    saving={savingId === u.id}
+                  />
+                ))}
                 </tbody>
               </table>
             </div>
@@ -164,63 +312,70 @@ function UserRow({
   user,
   agencies,
   onUpdate,
+  onDelete,
   saving,
 }: {
   user: AdminUser;
   agencies: Agency[];
-  onUpdate: (user: AdminUser, inlineNewAgency: string) => Promise<void>;
+  onUpdate: (user: AdminUser) => Promise<void>;
+  onDelete: (userId: string) => Promise<void>;
   saving: boolean;
 }) {
   const [selectedAgencyId, setSelectedAgencyId] = useState<string>(
     user.agencyId ?? '',
   );
-  const [inlineNewAgency, setInlineNewAgency] = useState('');
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [role, setRole] = useState<'admin' | 'agency'>(user.role);
 
   useEffect(() => {
     setSelectedAgencyId(user.agencyId ?? '');
-  }, [user.agencyId]);
+    setDisplayName(user.displayName);
+    setRole(user.role);
+  }, [user]);
 
   async function handleSave() {
-    await onUpdate(
-      { ...user, agencyId: selectedAgencyId || null },
-      inlineNewAgency,
-    );
-    setInlineNewAgency('');
+    await onUpdate({
+      ...user,
+      displayName,
+      role,
+      agencyId: selectedAgencyId || null,
+    });
   }
 
   return (
     <tr className="border-t border-slate-800">
       <td className="px-3 py-2">
-        <div className="font-medium text-slate-100">{user.displayName}</div>
+        <input
+          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
         <div className="text-[10px] text-slate-500">{user.id}</div>
       </td>
       <td className="px-3 py-2 text-slate-200">{user.email ?? '-'}</td>
       <td className="px-3 py-2">
-        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-100">
-          {user.role}
-        </span>
+        <select
+          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+          value={role}
+          onChange={(e) => setRole(e.target.value as 'admin' | 'agency')}
+        >
+          <option value="admin">admin</option>
+          <option value="agency">agency</option>
+        </select>
       </td>
       <td className="px-3 py-2">
-        <div className="space-y-2">
-          <select
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-            value={selectedAgencyId}
-            onChange={(e) => setSelectedAgencyId(e.target.value)}
-          >
-            <option value="">(未設定)</option>
-            {agencies.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-          <input
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-            value={inlineNewAgency}
-            onChange={(e) => setInlineNewAgency(e.target.value)}
-            placeholder="新しい代理店名を追加"
-          />
-        </div>
+        <select
+          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+          value={selectedAgencyId}
+          onChange={(e) => setSelectedAgencyId(e.target.value)}
+        >
+          <option value="">(未設定)</option>
+          {agencies.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
       </td>
       <td className="px-3 py-2">
         <button
@@ -230,6 +385,14 @@ function UserRow({
           className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
         >
           {saving ? '保存中...' : '保存'}
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(user.id)}
+          disabled={saving}
+          className="ml-2 inline-flex items-center rounded-md border border-red-500 px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-red-500/10 disabled:opacity-60"
+        >
+          削除
         </button>
       </td>
     </tr>

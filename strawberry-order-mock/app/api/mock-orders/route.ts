@@ -119,28 +119,38 @@ export async function GET(req: NextRequest) {
 
     const rows = (data ?? []) as any[];
 
-    const orders: MockOrder[] = rows.map((r) => ({
-      id: r.id,
-      orderNumber: r.order_number,
-      productId: r.product_id ?? null,
-      productName: r.product_name ?? "",
-      piecesPerSheet: r.pieces_per_sheet ?? null,
-      quantity: r.quantity ?? 0,
-      postalAndAddress: r.postal_and_address ?? "",
-      recipientName: r.recipient_name ?? "",
-      phoneNumber: r.phone_number ?? "",
-      deliveryDate: r.delivery_date ?? null,
-      deliveryTimeNote: r.delivery_time_note ?? null,
-      agencyName: r.agency_name ?? null,
-      createdByEmail: r.created_by_email ?? null,
-      status: (r.status as OrderStatus) ?? "pending",
-      createdAt: r.created_at ?? new Date().toISOString(),
-      unitPrice: r.unit_price ?? null,
-      taxRate: r.tax_rate ?? null,
-      subtotal: r.subtotal ?? null,
-      taxAmount: r.tax_amount ?? null,
-      totalAmount: r.total_amount ?? null,
-    }));
+    const orders: MockOrder[] = rows.map((r) => {
+      const unitPriceFromMaster =
+        r.pieces_per_sheet != null
+          ? NATSUAKI_STRAWBERRY_PRICES[r.pieces_per_sheet as number]
+          : undefined;
+
+      const unitPrice = r.unit_price ?? unitPriceFromMaster ?? null;
+      const taxRate = r.tax_rate ?? DEFAULT_TAX_RATE;
+
+      return {
+        id: r.id,
+        orderNumber: r.order_number,
+        productId: r.product_id ?? null,
+        productName: r.product_name ?? "",
+        piecesPerSheet: r.pieces_per_sheet ?? null,
+        quantity: r.quantity ?? 0,
+        postalAndAddress: r.postal_and_address ?? "",
+        recipientName: r.recipient_name ?? "",
+        phoneNumber: r.phone_number ?? "",
+        deliveryDate: r.delivery_date ?? null,
+        deliveryTimeNote: r.delivery_time_note ?? null,
+        agencyName: r.agency_name ?? null,
+        createdByEmail: r.created_by_email ?? null,
+        status: (r.status as OrderStatus) ?? "pending",
+        createdAt: r.created_at ?? new Date().toISOString(),
+        unitPrice,
+        taxRate,
+        subtotal: r.subtotal ?? null,
+        taxAmount: r.tax_amount ?? null,
+        totalAmount: r.total_amount ?? null,
+      };
+    });
 
     return NextResponse.json({ orders });
   } catch (error: any) {
