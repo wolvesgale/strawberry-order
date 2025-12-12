@@ -10,7 +10,7 @@ type Agency = {
 
 type AdminUser = {
   id: string;
-  displayName: string;
+  name: string;
   email?: string | null;
   role: 'admin' | 'agency';
   agencyId: string | null;
@@ -23,10 +23,11 @@ type FetchResponse = {
 };
 
 type CreatePayload = {
-  displayName: string;
+  name: string;
   email: string;
   role: 'admin' | 'agency';
   agencyId: string | null;
+  newAgencyName: string | null;
 };
 
 export default function AdminUsersPage() {
@@ -43,6 +44,7 @@ export default function AdminUsersPage() {
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'agency'>('agency');
   const [newAgencyId, setNewAgencyId] = useState<string>('');
+  const [newAgencyName, setNewAgencyName] = useState<string>('');
 
   const agencyOptions = useMemo(() => agencies, [agencies]);
 
@@ -94,6 +96,7 @@ export default function AdminUsersPage() {
       setNewEmail('');
       setNewRole('agency');
       setNewAgencyId('');
+      setNewAgencyName('');
     } catch (e: any) {
       console.error(e);
       setError(e.message || '作成に失敗しました。');
@@ -103,7 +106,7 @@ export default function AdminUsersPage() {
   }
 
   async function handleUpdate(user: AdminUser) {
-    if (!user.displayName.trim()) {
+    if (!user.name.trim()) {
       setError('名前を入力してください。');
       return;
     }
@@ -116,7 +119,7 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: user.id,
-          displayName: user.displayName,
+          name: user.name,
           role: user.role,
           agencyId: user.agencyId ?? null,
         }),
@@ -172,9 +175,7 @@ export default function AdminUsersPage() {
         <header className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-50">ユーザー管理</h1>
-            <p className="text-xs text-slate-400">
-              ユーザーのロールと所属代理店を管理します。既存ユーザーは Supabase 上のデータをそのまま表示しています。
-            </p>
+            <p className="text-xs text-slate-400">ユーザーのロールと所属代理店を管理します。</p>
           </div>
           <a
             href="/admin/orders"
@@ -203,10 +204,11 @@ export default function AdminUsersPage() {
             onSubmit={(e) => {
               e.preventDefault();
               handleCreate({
-                displayName: newDisplayName,
+                name: newDisplayName,
                 email: newEmail,
                 role: newRole,
                 agencyId: newAgencyId || null,
+                newAgencyName: newAgencyName.trim() || null,
               });
             }}
           >
@@ -255,6 +257,18 @@ export default function AdminUsersPage() {
                 ))}
               </select>
             </label>
+            <label className="text-xs text-slate-200 space-y-1">
+              <span className="block">新しい代理店名</span>
+              <input
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                placeholder="新しい代理店名を追加"
+                value={newAgencyName}
+                onChange={(e) => setNewAgencyName(e.target.value)}
+              />
+              <p className="text-[10px] text-slate-400">
+                代理店ユーザーの場合、所属代理店か新しい代理店名を入力してください。
+              </p>
+            </label>
             <div className="sm:col-span-2 lg:col-span-4 flex items-end justify-end">
               <button
                 type="submit"
@@ -289,15 +303,15 @@ export default function AdminUsersPage() {
                 </thead>
                 <tbody>
                   {users.map((u) => (
-                  <UserRow
-                    key={u.id}
-                    user={u}
-                    agencies={agencyOptions}
-                    onUpdate={handleUpdate}
-                    onDelete={handleDelete}
-                    saving={savingId === u.id}
-                  />
-                ))}
+                    <UserRow
+                      key={u.id}
+                      user={u}
+                      agencies={agencyOptions}
+                      onUpdate={handleUpdate}
+                      onDelete={handleDelete}
+                      saving={savingId === u.id}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -324,19 +338,19 @@ function UserRow({
   const [selectedAgencyId, setSelectedAgencyId] = useState<string>(
     user.agencyId ?? '',
   );
-  const [displayName, setDisplayName] = useState(user.displayName);
+  const [name, setName] = useState(user.name);
   const [role, setRole] = useState<'admin' | 'agency'>(user.role);
 
   useEffect(() => {
     setSelectedAgencyId(user.agencyId ?? '');
-    setDisplayName(user.displayName);
+    setName(user.name);
     setRole(user.role);
   }, [user]);
 
   async function handleSave() {
     await onUpdate({
       ...user,
-      displayName,
+      name,
       role,
       agencyId: selectedAgencyId || null,
     });
@@ -347,12 +361,17 @@ function UserRow({
       <td className="px-3 py-2">
         <input
           className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
         />
-        <div className="text-[10px] text-slate-500">{user.id}</div>
       </td>
-      <td className="px-3 py-2 text-slate-200">{user.email ?? '-'}</td>
+      <td className="px-3 py-2 text-slate-200">
+        <input
+          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 outline-none"
+          value={user.email ?? '-'}
+          readOnly
+        />
+      </td>
       <td className="px-3 py-2">
         <select
           className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"

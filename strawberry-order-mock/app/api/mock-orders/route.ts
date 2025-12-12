@@ -33,10 +33,10 @@ const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
 // 夏秋苺（税抜）価格マスタ：pieces_per_sheet -> unitPrice
 const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
-  20: 1600,
-  24: 1500,
-  30: 1450,
-  36: 1200,
+  20: 1700,
+  24: 1600,
+  30: 1550,
+  36: 1300,
 };
 const DEFAULT_TAX_RATE = 10; // 10%
 
