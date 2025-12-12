@@ -17,6 +17,13 @@ type MockProduct = {
 
 const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
 
+const NATSUAKI_PRICE_TABLE = [
+  { pieces: 20, price: 1700 },
+  { pieces: 24, price: 1600 },
+  { pieces: 30, price: 1550 },
+  { pieces: 36, price: 1300 },
+];
+
 export default function OrderPage() {
   const router = useRouter();
 
@@ -222,6 +229,25 @@ export default function OrderPage() {
             </p>
           )}
         </header>
+
+        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-100">夏秋苺 価格表（税抜）</h2>
+          <p className="mt-1 text-xs text-slate-400">
+            玉数ごとに税抜単価が設定されています。発注時の単価算定に使用されます。
+          </p>
+          <div className="mt-3 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
+            <table className="min-w-full text-xs text-slate-100">
+              <tbody>
+                {NATSUAKI_PRICE_TABLE.map((item) => (
+                  <tr key={item.pieces} className="border-t border-slate-800 first:border-t-0">
+                    <td className="px-3 py-2">{item.pieces}玉</td>
+                    <td className="px-3 py-2 text-right">{item.price.toLocaleString()}円</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         {/* フォーム本体 */}
         <form

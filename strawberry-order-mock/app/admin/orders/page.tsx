@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabaseClient";
@@ -49,15 +49,45 @@ function formatDateTime(dateStr: string | null): string {
   return iso.replace("T", " ").slice(0, 19);
 }
 
-function formatCurrency(value: number | null): string {
-  if (value == null) return "-";
-  return value.toLocaleString("ja-JP");
-}
+  function formatCurrency(value: number | null): string {
+    if (value == null) return "-";
+    return value.toLocaleString("ja-JP");
+  }
+
+  const agencyOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        orders
+          .map((o) => o.agencyName)
+          .filter((name): name is string => Boolean(name))
+      )
+    );
+    return names;
+  }, [orders]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const matchesAgency =
+        selectedAgency === "all" || !selectedAgency
+          ? true
+          : order.agencyName === selectedAgency;
+
+      const targetDate = order.deliveryDate ?? order.createdAt;
+      const targetMonth = targetDate ? targetDate.slice(0, 7) : "";
+      const matchesMonth = selectedMonth
+        ? targetMonth === selectedMonth
+        : true;
+
+      return matchesAgency && matchesMonth;
+    });
+  }, [orders, selectedAgency, selectedMonth]);
 
 export default function AdminOrdersPage() {
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [selectedAgency, setSelectedAgency] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -256,11 +286,38 @@ export default function AdminOrdersPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-100">
-              注文一覧（{orders.length}件）
+              注文一覧（{filteredOrders.length}件）
             </h2>
             {loading && (
               <p className="text-xs text-slate-400">読み込み中...</p>
             )}
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3 text-xs text-slate-100">
+            <label className="space-y-1">
+              <span className="block text-slate-300">代理店フィルタ</span>
+              <select
+                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={selectedAgency}
+                onChange={(e) => setSelectedAgency(e.target.value)}
+              >
+                <option value="all">すべての代理店</option>
+                {agencyOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="block text-slate-300">月フィルタ</span>
+              <input
+                type="month"
+                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+              />
+            </label>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
@@ -283,7 +340,7 @@ export default function AdminOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => (
+                {filteredOrders.map((order) => (
                   <tr
                     key={order.id}
                     className="border-t border-slate-800 hover:bg-slate-900/60"
