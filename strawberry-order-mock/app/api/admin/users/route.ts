@@ -4,7 +4,11 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-type Agency = {
+export const runtime = "nodejs";
+
+type Role = "admin" | "agency";
+
+type AgencyRow = {
   id: string;
   name: string;
   code: string | null;
@@ -337,7 +341,20 @@ export async function PATCH(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as PatchBody;
 
-    if (!body.id) {
+    const id = body.id;
+    const name = body.name?.trim();
+    const role = body.role;
+    let agencyId = body.agencyId ?? null;
+    const newAgencyName = body.newAgencyName?.trim() ?? "";
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "更新対象のユーザーIDが指定されていません。" },
+        { status: 400 },
+      );
+    }
+
+    if (role && !["admin", "agency"].includes(role)) {
       return NextResponse.json(
         { error: "ユーザーIDが指定されていません。" },
         { status: 400 }
@@ -426,6 +443,8 @@ export async function PATCH(req: Request) {
           { status: 400 }
         );
       }
+    } catch (e) {
+      console.error("[/api/admin/users PATCH] getUserById exception:", e);
     }
 
     const { error: updateError } = await client
