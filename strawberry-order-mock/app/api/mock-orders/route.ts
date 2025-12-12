@@ -53,7 +53,9 @@ function getMinDeliveryDate(): Date {
   return d;
 }
 
+/**
  * 注文一覧取得
+ */
 export async function GET(req: NextRequest) {
   const client = supabaseAdmin;
   if (!client) {
