@@ -286,6 +286,16 @@ export async function POST(req: Request) {
   }
 }
 
+export async function POST() {
+  return NextResponse.json(
+    {
+      error:
+        "新規ユーザーの作成は管理者が手動で行います。この画面からの登録は無効化されています。",
+    },
+    { status: 405 }
+  );
+}
+
 export async function PATCH(req: Request) {
   const client = ensureSupabase();
   if (!client) {
