@@ -31,6 +31,15 @@ export type MockOrder = {
 
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
+// 夏秋苺（税抜）価格マスタ：pieces_per_sheet -> unitPrice
+const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
+  20: 1600,
+  24: 1500,
+  30: 1450,
+  36: 1200,
+};
+const DEFAULT_TAX_RATE = 10; // 10%
+
 function ensureSupabase() {
   if (!supabaseAdmin) {
     console.error(
@@ -47,29 +56,6 @@ function getMinDeliveryDate(): Date {
   d.setDate(d.getDate() + 3);
   d.setHours(0, 0, 0, 0);
   return d;
-}
-
-// 夏秋苺 価格テーブル（玉数ごと）
-const PRICE_TABLE_NATSUAKI: Record<number, number> = {
-  20: 1600,
-  24: 1500,
-  30: 1450,
-  36: 1200,
-};
-
-function getUnitPriceForOrder(
-  productName: string,
-  piecesPerSheet: number | null
-): number | null {
-  if (piecesPerSheet == null) return null;
-  const price = PRICE_TABLE_NATSUAKI[piecesPerSheet];
-  if (typeof price === "number") return price;
-
-  console.warn("[mock-orders] 未定義の玉数の単価", {
-    productName,
-    piecesPerSheet,
-  });
-  return null;
 }
 
 /**
@@ -335,7 +321,7 @@ export async function POST(request: NextRequest) {
     const seq = (count ?? 0) + 1;
     const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
 
-    // ===== 金額：body > 価格テーブル > PRODUCTS の順に採用 =====
+    // ===== 金額：body > 夏秋苺価格マスタ > PRODUCTS の順に採用 =====
     let unitPrice: number | null =
       typeof body.unitPrice === "number" ? body.unitPrice : null;
     let taxRate: number | null =
@@ -344,8 +330,17 @@ export async function POST(request: NextRequest) {
     const piecesNum =
       piecesPerSheet != null ? Number(piecesPerSheet) : null;
 
-    if (unitPrice == null) {
-      unitPrice = getUnitPriceForOrder(productName, piecesNum);
+    if (unitPrice == null && piecesNum != null) {
+      const candidate = NATSUAKI_STRAWBERRY_PRICES[piecesNum];
+      if (typeof candidate === "number") {
+        unitPrice = candidate;
+      }
+    }
+
+    if (taxRate == null && piecesNum != null) {
+      if (NATSUAKI_STRAWBERRY_PRICES[piecesNum] != null) {
+        taxRate = DEFAULT_TAX_RATE;
+      }
     }
 
     if ((unitPrice == null || taxRate == null) && productId) {
