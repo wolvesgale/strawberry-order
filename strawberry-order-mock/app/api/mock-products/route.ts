@@ -1,53 +1,50 @@
-// app/api/mock-products/route.ts
-import { NextResponse } from 'next/server';
+// strawberry-order-mock/app/api/mock-products/route.ts
+import { NextResponse } from "next/server";
 
-export type Season = 'summer' | 'summer_autumn' | 'winter';
+export const runtime = "nodejs";
+
+export type Season = "summer" | "autumn" | "winter";
 
 export type MockProduct = {
   id: string;
   name: string;
-  code: string;
   season: Season;
-  unitPrice: number; // 税抜
-  taxRate: number;   // 0.08 / 0.10
+  unitPrice: number;
+  taxRate: number; // パーセント表記（10 = 10%）
 };
 
-// 簡易マスタ（後でSupabaseに移行予定）
-export const MOCK_PRODUCTS: MockProduct[] = [
+// ★ 商品マスタ：ここを書き換えるとデフォルト単価が変わる
+export const PRODUCTS: MockProduct[] = [
   {
-    id: 'p1',
-    name: '夏いちご',
-    code: 'summer',
-    season: 'summer',
-    unitPrice: 800,
-    taxRate: 0.08,
+    id: "akihime-summer",
+    name: "夏いちご（章姫）",
+    season: "summer",
+    unitPrice: 5000,
+    taxRate: 10,
   },
   {
-    id: 'p2',
-    name: '夏秋いちご',
-    code: 'summer-autumn',
-    season: 'summer_autumn',
-    unitPrice: 900,
-    taxRate: 0.08,
+    id: "akihime-autumn",
+    name: "秋いちご（章姫）",
+    season: "autumn",
+    unitPrice: 5200,
+    taxRate: 10,
   },
   {
-    id: 'p3',
-    name: '冬いちご',
-    code: 'winter',
-    season: 'winter',
-    unitPrice: 1000,
-    taxRate: 0.08,
+    id: "akihime-winter",
+    name: "冬いちご（章姫）",
+    season: "winter",
+    unitPrice: 5500,
+    taxRate: 10,
   },
   {
-    id: 'p4',
-    name: 'プレミアムいちご詰め合わせ',
-    code: 'premium-mix',
-    season: 'summer_autumn',
-    unitPrice: 1500,
-    taxRate: 0.08,
+    id: "benihoppe-winter",
+    name: "冬いちご（紅ほっぺ）",
+    season: "winter",
+    unitPrice: 5800,
+    taxRate: 10,
   },
 ];
 
-export function GET() {
-  return NextResponse.json({ products: MOCK_PRODUCTS });
+export async function GET() {
+  return NextResponse.json({ products: PRODUCTS });
 }

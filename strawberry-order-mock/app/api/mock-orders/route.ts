@@ -1,8 +1,9 @@
-// app/api/mock-orders/route.ts
-import { NextResponse } from 'next/server';
-import { MOCK_PRODUCTS, MockProduct } from '../mock-products/route';
+// strawberry-order-mock/app/api/mock-orders/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { PRODUCTS } from "../mock-products/route";
 
-type MockOrderStatus = 'pending' | 'shipped' | 'canceled';
+export const runtime = "nodejs";
 
 const ORDER_NUMBER_PREFIX = 'ORD';
 const PRICE_TABLE_NATSUAKI: Record<number, number> = {
@@ -45,11 +46,27 @@ function generateOrderNumber(createdAtIso: string) {
   return `${ORDER_NUMBER_PREFIX}-${datePart}-${seq}`;
 }
 
-export function GET() {
-  return NextResponse.json({ orders: ORDERS });
+// 本日から 3 日後 0:00
+function getMinDeliveryDate(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + 3);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-export async function POST(req: Request) {
+/**
+ * 注文一覧取得
+ */
+export async function GET(req: NextRequest) {
+  const client = supabaseAdmin;
+  if (!client) {
+    console.error("[/api/mock-orders GET] supabaseAdmin is null");
+    return NextResponse.json(
+      { error: "サーバー設定エラーです。管理者にお問い合わせください。" },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = (await req.json().catch(() => ({}))) as {
       productId: string;
@@ -79,7 +96,7 @@ export async function POST(req: Request) {
 
     if (!productId || typeof quantity !== 'number') {
       return NextResponse.json(
-        { error: '商品とセット数は必須です。' },
+        { error: "商品が選択されていません。" },
         { status: 400 }
       );
     }
@@ -93,24 +110,59 @@ export async function POST(req: Request) {
 
     if (quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
-        { error: 'セット数は1以上の偶数で入力してください。' },
+        { error: "冬いちごは4の倍数で入力してください。" },
         { status: 400 }
       );
     }
 
-    const product = MOCK_PRODUCTS.find((p) => p.id === productId);
-
-    if (!product) {
+    const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
+    if (
+      !piecesPerSheet ||
+      !PIECES_PER_SHEET_OPTIONS.includes(Number(piecesPerSheet))
+    ) {
       return NextResponse.json(
-        { error: '商品が見つかりません。' },
+        { error: "1シートあたりの玉数を選択してください。" },
         { status: 400 }
       );
     }
 
-    // 冬いちごだけ4の倍数チェック
-    if (product.season === 'winter' && quantity % 4 !== 0) {
+    if (!postalAndAddress) {
       return NextResponse.json(
-        { error: '冬いちごは4の倍数で発注してください。' },
+        { error: "郵便番号・住所を入力してください。" },
+        { status: 400 }
+      );
+    }
+    if (!recipientName) {
+      return NextResponse.json(
+        { error: "お届け先氏名を入力してください。" },
+        { status: 400 }
+      );
+    }
+    if (!phoneNumber) {
+      return NextResponse.json(
+        { error: "運送会社と連絡が取れる電話番号を入力してください。" },
+        { status: 400 }
+      );
+    }
+    if (!deliveryDate) {
+      return NextResponse.json(
+        { error: "ご希望の到着日を選択してください。" },
+        { status: 400 }
+      );
+    }
+
+    const minDate = getMinDeliveryDate();
+    const selectedDate = new Date(deliveryDate);
+    if (Number.isNaN(selectedDate.getTime())) {
+      return NextResponse.json(
+        { error: "到着希望日が正しく入力されていません。" },
+        { status: 400 }
+      );
+    }
+    if (selectedDate < minDate) {
+      const minStr = minDate.toISOString().slice(0, 10);
+      return NextResponse.json(
+        { error: `到着希望日は ${minStr} 以降の日付を選択してください。` },
         { status: 400 }
       );
     }
@@ -161,7 +213,74 @@ export async function POST(req: Request) {
       createdAt: createdAtIso,
     };
 
-    ORDERS = [order, ...ORDERS];
+    const { id, status, unitPrice, taxRate } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "更新対象の注文 ID が指定されていません。" },
+        { status: 400 }
+      );
+    }
+
+    if (!status) {
+      return NextResponse.json(
+        { error: "更新後のステータスが指定されていません。" },
+        { status: 400 }
+      );
+    }
+
+    const allowed: OrderStatus[] = ["pending", "shipped", "canceled"];
+    if (!allowed.includes(status)) {
+      return NextResponse.json(
+        { error: "不正なステータスです。" },
+        { status: 400 }
+      );
+    }
+
+    // 金額再計算（単価/税率が送られてきた場合）
+    const updatePayload: any = { status };
+
+    if (typeof unitPrice === "number") {
+      updatePayload.unit_price = unitPrice;
+    }
+    if (typeof taxRate === "number") {
+      updatePayload.tax_rate = taxRate;
+    }
+
+    if (typeof unitPrice === "number" || typeof taxRate === "number") {
+      // いったん現在の quantity を取得して再計算
+      const { data: current, error: fetchError } = await client
+        .from("orders")
+        .select("quantity, unit_price, tax_rate")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) {
+        console.error(
+          "[/api/mock-orders PATCH] fetch current order error:",
+          fetchError
+        );
+      } else {
+        const q = current.quantity as number;
+        const u =
+          typeof unitPrice === "number"
+            ? unitPrice
+            : (current.unit_price as number | null);
+        const t =
+          typeof taxRate === "number"
+            ? taxRate
+            : (current.tax_rate as number | null);
+
+        const subtotal =
+          u != null ? u * q : null;
+        const taxAmount =
+          subtotal != null && t != null
+            ? Math.round(subtotal * (Number(t) / 100))
+            : null;
+        const totalAmount =
+          subtotal != null && taxAmount != null
+            ? subtotal + taxAmount
+            : null;
 
     const mailText = `以下の内容で発注を受付しました。\n\n` +
       `注文番号: ${order.orderNumber}\n` +
@@ -184,11 +303,11 @@ export async function POST(req: Request) {
       body: mailText,
     });
 
-    return NextResponse.json({ orderNumber: order.orderNumber }, { status: 201 });
-  } catch (e) {
-    console.error(e);
+    return NextResponse.json({ ok: true, order: updated });
+  } catch (error: any) {
+    console.error("[/api/mock-orders PATCH] Unexpected error:", error);
     return NextResponse.json(
-      { error: '予期せぬエラーが発生しました。' },
+      { error: error?.message ?? "注文ステータス更新中にエラーが発生しました。" },
       { status: 500 }
     );
   }

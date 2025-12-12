@@ -1,7 +1,11 @@
-// app/admin/orders/page.tsx
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabase } from "../../../lib/supabaseClient";
+
+export type OrderStatus = "pending" | "shipped" | "canceled";
 
 type Order = {
   id: string;
@@ -16,22 +20,204 @@ type Order = {
   deliveryAddress: string;
   status: 'pending' | 'shipped' | 'canceled';
   createdAt: string;
+  unitPrice: number | null;
+  taxRate: number | null;
+  subtotal: number | null;
+  taxAmount: number | null;
+  totalAmount: number | null;
 };
 
+type OrdersApiResponse = {
+  orders: Order[];
+};
+
+const STATUS_LABELS: Record<OrderStatus, string> = {
+  pending: "受付",
+  shipped: "発送済み",
+  canceled: "キャンセル",
+};
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateTime(dateStr: string | null): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "-";
+  const iso = d.toISOString();
+  return iso.replace("T", " ").slice(0, 19);
+}
+
+function formatCurrency(value: number | null): string {
+  if (value == null) return "-";
+  return value.toLocaleString("ja-JP");
+}
+
 export default function AdminOrdersPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [role] = useState<'admin' | 'agency'>('admin');
 
+      // 未ログイン → /login
+      if (!data?.user) {
+        router.push("/login");
+        return;
+      }
+
+      setEmail(data.user.email ?? null);
+
+      // profiles から role を取得
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("supabase profiles error", profileError);
+        // 取得できない場合は安全側に倒して代理店画面へ
+        router.push("/order");
+        return;
+      }
+
+      if (!profile || profile.role !== "admin") {
+        // 管理者以外は代理店用フォームへリダイレクト
+        router.push("/order");
+        return;
+      }
+
+      // ここまで来たら「admin」として OK
+      setAuthChecked(true);
+    }
+
+    checkAuthAndRole();
+  }, [router]);
+
+  // 注文一覧取得（admin と判定された後にだけ実行）
   useEffect(() => {
-    const load = async () => {
-      const res = await fetch('/api/mock-orders');
-      const data = await res.json();
-      setOrders(data.orders);
-      setLoading(false);
-    };
-    load();
-  }, []);
+    if (!authChecked) return;
+
+    async function fetchOrders() {
+      try {
+        const res = await fetch("/api/mock-orders", { cache: "no-store" });
+        if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
+        const json = (await res.json()) as OrdersApiResponse;
+        setOrders(json.orders ?? []);
+      } catch (e: any) {
+        console.error(e);
+        setError(e.message ?? "注文一覧の取得でエラーが発生しました。");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchOrders();
+  }, [authChecked]);
+
+  async function updateOrder(
+    id: string,
+    patch: { status?: OrderStatus; unitPrice?: number | null; taxRate?: number | null }
+  ) {
+    setSavingId(id);
+    setError(null);
+    try {
+      const res = await fetch("/api/mock-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...patch }),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error ?? "更新に失敗しました。");
+      }
+
+      const json = await res.json();
+      const updated: Order = json.order;
+
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message ?? "更新に失敗しました。");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  function handleStatusChange(id: string, value: string) {
+    updateOrder(id, { status: value as OrderStatus });
+  }
+
+  function handleUnitPriceChange(id: string, value: string) {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              unitPrice:
+                value === ""
+                  ? null
+                  : Number.isNaN(Number(value))
+                  ? o.unitPrice
+                  : Number(value),
+            }
+          : o
+      )
+    );
+  }
+
+  function handleTaxRateChange(id: string, value: string) {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              taxRate:
+                value === ""
+                  ? null
+                  : Number.isNaN(Number(value))
+                  ? o.taxRate
+                  : Number(value),
+            }
+          : o
+      )
+    );
+  }
+
+  function handleUnitPriceBlur(order: Order) {
+    updateOrder(order.id, {
+      unitPrice: order.unitPrice ?? null,
+      taxRate: order.taxRate ?? null,
+    });
+  }
+
+  function handleTaxRateBlur(order: Order) {
+    updateOrder(order.id, {
+      unitPrice: order.unitPrice ?? null,
+      taxRate: order.taxRate ?? null,
+    });
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
+  // ロールチェック中は軽くプレースホルダだけ出す
+  if (!authChecked) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-sm text-slate-400">認証情報を確認しています...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-950">
@@ -106,10 +292,21 @@ export default function AdminOrdersPage() {
                     </td>
                   </tr>
                 ))}
+
+                {orders.length === 0 && !loading && (
+                  <tr>
+                    <td
+                      colSpan={13}
+                      className="px-4 py-8 text-center text-xs text-slate-500"
+                    >
+                      現在登録されている注文はありません。
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
-        )}
+        </section>
       </div>
     </main>
   );
