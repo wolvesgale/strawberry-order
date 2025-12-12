@@ -1,4 +1,3 @@
-// strawberry-order-mock/app/order/page.tsx
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
@@ -14,27 +13,6 @@ type MockProduct = {
   season: Season;
   unitPrice: number;
   taxRate: number;
-};
-
-// /api/admin/users のレスポンスに合わせた簡易型
-type Agency = {
-  id: string;
-  name: string;
-  code: string;
-};
-
-type AdminUserSummary = {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "agency";
-  agencyId?: string | null;
-  createdAt: string;
-};
-
-type AdminUsersApiResponse = {
-  agencies: Agency[];
-  users: AdminUserSummary[];
 };
 
 const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
@@ -62,8 +40,6 @@ export default function OrderPage() {
 
   // ログインメール表示用
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  // 代理店名（メール件名・発注者情報に使う）
-  const [agencyName, setAgencyName] = useState<string | null>(null);
 
   // UI状態
   const [submitting, setSubmitting] = useState(false);
@@ -78,9 +54,9 @@ export default function OrderPage() {
     setMinDeliveryDate(iso);
   }, []);
 
-  // 認証チェック & メール取得 & 代理店名解決
+  // 認証チェック & メール取得
   useEffect(() => {
-    async function checkAuthAndResolveAgency() {
+    async function checkAuth() {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         console.error("supabase auth error", error);
@@ -89,37 +65,9 @@ export default function OrderPage() {
         router.push("/login");
         return;
       }
-
-      const email = data.user.email ?? null;
-      setSessionEmail(email);
-
-      // メールアドレスから代理店名を推定
-      if (email) {
-        try {
-          const res = await fetch("/api/admin/users");
-          if (!res.ok) {
-            console.warn(
-              "[order] /api/admin/users から代理店情報を取得できませんでした。"
-            );
-            return;
-          }
-          const json = (await res.json()) as AdminUsersApiResponse;
-          const users = json.users ?? [];
-          const agencies = json.agencies ?? [];
-
-          const me = users.find((u) => u.email === email);
-          if (me && me.agencyId) {
-            const agency = agencies.find((a) => a.id === me.agencyId);
-            if (agency) {
-              setAgencyName(agency.name);
-            }
-          }
-        } catch (e) {
-          console.error("[order] 代理店名の取得中にエラー", e);
-        }
-      }
+      setSessionEmail(data.user.email ?? null);
     }
-    checkAuthAndResolveAgency();
+    checkAuth();
   }, [router]);
 
   // 商品一覧取得
@@ -165,10 +113,7 @@ export default function OrderPage() {
       return;
     }
 
-    if (
-      !piecesPerSheet ||
-      !PIECES_PER_SHEET_OPTIONS.includes(piecesPerSheet)
-    ) {
+    if (!piecesPerSheet || !PIECES_PER_SHEET_OPTIONS.includes(piecesPerSheet)) {
       setError("1シートあたりの玉数を選択してください。");
       return;
     }
@@ -199,9 +144,7 @@ export default function OrderPage() {
       }
 
       if (selectedDateValue < minDateValue) {
-        setError(
-          `到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`
-        );
+        setError(`到着希望日は ${minDeliveryDate} 以降の日付を選択してください。`);
         return;
       }
     }
@@ -214,9 +157,6 @@ export default function OrderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId: selectedProductId,
-          productName: selectedProduct?.name ?? null,
-          unitPrice: selectedProduct?.unitPrice ?? null,
-          taxRate: selectedProduct?.taxRate ?? null,
           quantity,
           piecesPerSheet,
           postalAndAddress,
@@ -225,7 +165,6 @@ export default function OrderPage() {
           deliveryDate,
           deliveryTimeNote,
           createdByEmail: sessionEmail,
-          agencyName: agencyName ?? undefined,
         }),
       });
 
@@ -269,33 +208,12 @@ export default function OrderPage() {
             <p className="mt-1 text-xs text-slate-500">
               ログインメール：{sessionEmail ?? "未ログイン"}
             </p>
-            {agencyName && (
-              <p className="text-xs text-slate-500">代理店名：{agencyName}</p>
-            )}
             <Link
               href="/admin/orders"
               className="mt-2 inline-flex items-center text-xs text-emerald-300 hover:text-emerald-200 underline underline-offset-4"
             >
               管理画面へ
             </Link>
-{/* 管理系リンク */}
-<div className="mt-2 flex flex-wrap gap-2 text-xs">
-  {/* 管理者用：注文一覧（admin 以外は /admin/orders 側でリダイレクトされる） */}
-  <Link
-    href="/admin/orders"
-    className="inline-flex items-center rounded-md border border-slate-600 px-2 py-1 text-slate-200 hover:bg-slate-800"
-  >
-    管理者用注文一覧
-  </Link>
-
-  {/* 代理店・管理者共通：自分の代理店の発注履歴 */}
-  <Link
-    href="/orders"
-    className="inline-flex items-center rounded-md border border-emerald-500 px-2 py-1 text-emerald-200 hover:bg-emerald-500/10"
-  >
-    自分の発注履歴を見る
-  </Link>
-</div>
           </div>
 
           {message && (

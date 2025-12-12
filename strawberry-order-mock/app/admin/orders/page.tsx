@@ -10,12 +10,15 @@ export type OrderStatus = "pending" | "shipped" | "canceled";
 type Order = {
   id: string;
   orderNumber: string;
-  productName: string;
-  piecesPerSheet: number | null;
+  product: {
+    name: string;
+    season: string;
+  };
   quantity: number;
-  deliveryDate: string | null;
-  agencyName: string | null;
-  status: OrderStatus;
+  piecesPerSheet: number;
+  deliveryDate: string;
+  deliveryAddress: string;
+  status: 'pending' | 'shipped' | 'canceled';
   createdAt: string;
   unitPrice: number | null;
   taxRate: number | null;
@@ -59,19 +62,7 @@ export default function AdminOrdersPage() {
   const [email, setEmail] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // 認証 + ロールチェック完了フラグ
-  const [authChecked, setAuthChecked] = useState(false);
-
-  // 認証 & ロールチェック
-  useEffect(() => {
-    async function checkAuthAndRole() {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) {
-        console.error("supabase auth error", error);
-      }
+  const [role] = useState<'admin' | 'agency'>('admin');
 
       // 未ログイン → /login
       if (!data?.user) {
@@ -229,167 +220,75 @@ export default function AdminOrdersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* ヘッダー */}
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <main className="min-h-screen bg-slate-950">
+      <div className="max-w-4xl mx-auto px-4 py-8 space-y-4">
+        <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              注文一覧（管理者用）
-            </h1>
-            <p className="text-sm text-slate-400">
-              代理店経由で登録された発注が一覧で表示されます。
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              ログインメール：{email ?? "未ログイン"}
+            <h1 className="text-xl font-bold text-slate-50">注文一覧（管理者用）</h1>
+            <p className="text-xs text-slate-400">
+              /order から発注した注文データがここに一覧で表示されます。
             </p>
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/admin/users"
-              className="rounded-md border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800"
-            >
-              ユーザー管理
-            </Link>
-            <Link
+          <div className="flex items-center gap-3">
+            {role === 'admin' && (
+              <a
+                href="/admin/users"
+                className="inline-flex items-center rounded-md border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+              >
+                ユーザー管理へ
+              </a>
+            )}
+            <a
               href="/order"
-              className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+              className="text-xs text-slate-300 underline hover:text-slate-100"
             >
-              発注フォーム
-            </Link>
-            <button
-              onClick={handleLogout}
-              className="rounded-md border border-red-500 bg-red-600/10 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-500/20"
-            >
-              ログアウト
-            </button>
+              発注フォームへ
+            </a>
           </div>
         </header>
 
-        {error && (
-          <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
-            {error}
+        {loading ? (
+          <p className="text-sm text-slate-400">読み込み中...</p>
+        ) : orders.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            まだ注文がありません。/order からテスト発注してみてください。
           </p>
-        )}
-
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-100">
-              注文一覧（{orders.length}件）
-            </h2>
-            {loading && (
-              <p className="text-xs text-slate-400">読み込み中...</p>
-            )}
-          </div>
-
-          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-900/80 border-b border-slate-800">
-                <tr className="text-xs text-slate-400">
-                  <th className="px-4 py-2 text-left">注文ID</th>
-                  <th className="px-4 py-2 text-left">商品</th>
-                  <th className="px-4 py-2 text-center">玉数/シート</th>
-                  <th className="px-4 py-2 text-center">セット数</th>
-                  <th className="px-4 py-2 text-center">到着希望日</th>
-                  <th className="px-4 py-2 text-left">代理店</th>
-                  <th className="px-4 py-2 text-right">単価</th>
-                  <th className="px-4 py-2 text-right">税率</th>
-                  <th className="px-4 py-2 text-right">小計(税抜)</th>
-                  <th className="px-4 py-2 text-right">消費税</th>
-                  <th className="px-4 py-2 text-right">合計(税込)</th>
-                  <th className="px-4 py-2 text-center">ステータス</th>
-                  <th className="px-4 py-2 text-center">受付日時</th>
+        ) : (
+          <div className="overflow-x-auto bg-slate-900 border border-slate-700 rounded-xl shadow-sm">
+            <table className="min-w-full text-xs text-slate-100">
+              <thead className="bg-slate-800 text-slate-100">
+                <tr>
+                  <th className="text-left px-3 py-2">注文ID</th>
+                  <th className="text-left px-3 py-2">商品</th>
+                  <th className="text-right px-3 py-2">玉数</th>
+                  <th className="text-right px-3 py-2">セット数</th>
+                  <th className="text-left px-3 py-2">到着希望日</th>
+                  <th className="text-left px-3 py-2">ステータス</th>
+                  <th className="text-left px-3 py-2">受付日時</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => (
-                  <tr
-                    key={order.id}
-                    className="border-t border-slate-800 hover:bg-slate-900/60"
-                  >
-                    <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-200">
-                      {order.orderNumber}
+                {orders.map((o) => (
+                  <tr key={o.id} className="border-t border-slate-800">
+                    <td className="px-3 py-2 font-mono text-[10px] text-slate-300">
+                      {o.orderNumber}
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-100">
-                      {order.productName}
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-100">{o.product.name}</div>
+                      <div className="text-[10px] text-slate-400">{o.product.season}</div>
                     </td>
-                    <td className="px-4 py-2 text-center text-xs text-slate-100">
-                      {order.piecesPerSheet != null
-                        ? `${order.piecesPerSheet}玉`
-                        : "-"}
+                    <td className="px-3 py-2 text-right">{o.piecesPerSheet}玉</td>
+                    <td className="px-3 py-2 text-right">{o.quantity}</td>
+                    <td className="px-3 py-2 text-[10px] text-slate-300 whitespace-nowrap">
+                      {o.deliveryDate}
                     </td>
-                    <td className="px-4 py-2 text-center text-xs text-slate-100">
-                      {order.quantity}
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-100">
+                        {o.status}
+                      </span>
                     </td>
-                    <td className="px-4 py-2 text-center text-xs text-slate-100">
-                      {formatDate(order.deliveryDate)}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-slate-100">
-                      {order.agencyName ?? "-"}
-                    </td>
-
-                    {/* 単価 */}
-                    <td className="px-4 py-2 text-right text-xs text-slate-100">
-                      <input
-                        type="number"
-                        className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                        value={order.unitPrice ?? ""}
-                        onChange={(e) =>
-                          handleUnitPriceChange(order.id, e.target.value)
-                        }
-                        onBlur={() => handleUnitPriceBlur(order)}
-                      />
-                    </td>
-
-                    {/* 税率 */}
-                    <td className="px-4 py-2 text-right text-xs text-slate-100">
-                      <input
-                        type="number"
-                        className="w-16 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                        value={order.taxRate ?? ""}
-                        onChange={(e) =>
-                          handleTaxRateChange(order.id, e.target.value)
-                        }
-                        onBlur={() => handleTaxRateBlur(order)}
-                      />
-                    </td>
-
-                    {/* 小計・税・合計 */}
-                    <td className="px-4 py-2 text-right text-xs text-slate-100">
-                      {formatCurrency(order.subtotal)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-xs text-slate-100">
-                      {formatCurrency(order.taxAmount)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-emerald-100 text-xs font-semibold">
-                      {formatCurrency(order.totalAmount)}
-                    </td>
-
-                    {/* ステータス */}
-                    <td className="px-4 py-2 text-center text-xs text-slate-100">
-                      <select
-                        className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                        value={order.status}
-                        onChange={(e) =>
-                          handleStatusChange(order.id, e.target.value)
-                        }
-                        disabled={savingId === order.id}
-                      >
-                        <option value="pending">
-                          {STATUS_LABELS["pending"]}
-                        </option>
-                        <option value="shipped">
-                          {STATUS_LABELS["shipped"]}
-                        </option>
-                        <option value="canceled">
-                          {STATUS_LABELS["canceled"]}
-                        </option>
-                      </select>
-                    </td>
-
-                    <td className="px-4 py-2 text-center text-xs text-slate-400 whitespace-nowrap">
-                      {formatDateTime(order.createdAt)}
+                    <td className="px-3 py-2 text-[10px] text-slate-400 whitespace-nowrap">
+                      {new Date(o.createdAt).toLocaleString('ja-JP')}
                     </td>
                   </tr>
                 ))}
