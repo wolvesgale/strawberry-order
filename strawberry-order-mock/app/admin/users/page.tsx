@@ -5,16 +5,16 @@ import { useEffect, useMemo, useState } from 'react';
 type Agency = {
   id: string;
   name: string;
-  code: string;
+  code: string | null;
 };
 
 type AdminUser = {
   id: string;
-  name: string;
-  email: string;
+  displayName: string;
+  email?: string | null;
   role: 'admin' | 'agency';
-  agencyId?: string | null;
-  createdAt: string;
+  agencyId: string | null;
+  agencyName: string | null;
 };
 
 type FetchResponse = {
@@ -29,11 +29,6 @@ export default function AdminUsersPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'admin' | 'agency'>('agency');
-  const [agencyId, setAgencyId] = useState<string>('');
-  const [newAgencyName, setNewAgencyName] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const agencyOptions = useMemo(() => agencies, [agencies]);
@@ -56,39 +51,6 @@ export default function AdminUsersPage() {
       setError(e.message || '読み込み中にエラーが発生しました。');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleCreate() {
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          email,
-          role,
-          agencyId: agencyId || null,
-          newAgencyName: newAgencyName || undefined,
-        }),
-      });
-
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error || 'ユーザー作成に失敗しました。');
-      }
-
-      setName('');
-      setEmail('');
-      setRole('agency');
-      setAgencyId('');
-      setNewAgencyName('');
-      await fetchData();
-      setMessage('ユーザーを作成しました。');
-    } catch (e: any) {
-      setError(e.message || 'ユーザー作成に失敗しました。');
     }
   }
 
@@ -128,7 +90,7 @@ export default function AdminUsersPage() {
           <div>
             <h1 className="text-xl font-bold text-slate-50">ユーザー管理</h1>
             <p className="text-xs text-slate-400">
-              ユーザーのロールと所属代理店を管理します。新しい代理店もここから追加できます。
+              ユーザーのロールと所属代理店を管理します。既存ユーザーは Supabase 上のデータをそのまま表示しています。
             </p>
           </div>
           <a
@@ -151,81 +113,11 @@ export default function AdminUsersPage() {
           </p>
         )}
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-4">
+        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-2">
           <h2 className="text-sm font-semibold text-slate-100">新規ユーザー作成</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="block text-xs text-slate-300">名前</label>
-              <input
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="例）山田 太郎"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-xs text-slate-300">メール</label>
-              <input
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="example@example.com"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="block text-xs text-slate-300">ロール</label>
-              <select
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'admin' | 'agency')}
-              >
-                <option value="admin">admin</option>
-                <option value="agency">agency</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs text-slate-300">所属代理店</label>
-              <select
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={agencyId}
-                onChange={(e) => setAgencyId(e.target.value)}
-              >
-                <option value="">(未設定)</option>
-                {agencyOptions.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="block text-xs text-slate-300">新しい代理店名（任意）</label>
-            <input
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-              value={newAgencyName}
-              onChange={(e) => setNewAgencyName(e.target.value)}
-              placeholder="例）前田"
-            />
-            <p className="text-[11px] text-slate-500">
-              入力すると新しい代理店を作成し、その代理店に紐付けてユーザーを作成します。
-            </p>
-          </div>
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={handleCreate}
-              className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
-            >
-              作成する
-            </button>
-          </div>
+          <p className="text-xs text-slate-400">
+            新規ユーザー作成は現在、Supabase ダッシュボードからのみ行っています。この画面では既存ユーザーの所属代理店のみ更新できます。
+          </p>
         </section>
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-3">
@@ -299,10 +191,10 @@ function UserRow({
   return (
     <tr className="border-t border-slate-800">
       <td className="px-3 py-2">
-        <div className="font-medium text-slate-100">{user.name}</div>
+        <div className="font-medium text-slate-100">{user.displayName}</div>
         <div className="text-[10px] text-slate-500">{user.id}</div>
       </td>
-      <td className="px-3 py-2 text-slate-200">{user.email}</td>
+      <td className="px-3 py-2 text-slate-200">{user.email ?? '-'}</td>
       <td className="px-3 py-2">
         <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-100">
           {user.role}
