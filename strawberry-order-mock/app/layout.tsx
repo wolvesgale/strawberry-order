@@ -1,12 +1,22 @@
-// strawberry-order-mock/app/admin/layout.tsx
-import React from "react";
+// strawberry-order-mock/app/layout.tsx
+import type { Metadata } from "next";
+import "./globals.css";
 
-export default function AdminLayout({
+export const metadata: Metadata = {
+  title: "いちご発注フォーム",
+  description: "代理店向けいちご発注システム",
+};
+
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // ここではロールチェックなどは一切行わず、
-  // 各ページ側（orders/users）で制御する方針にします。
-  return <>{children}</>;
+  return (
+    <html lang="ja">
+      <body className="min-h-screen bg-slate-950 text-slate-50 antialiased">
+        {children}
+      </body>
+    </html>
+  );
 }
