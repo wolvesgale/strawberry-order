@@ -1,3 +1,4 @@
+// strawberry-order-mock/app/admin/orders/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +23,8 @@ type Order = {
   subtotal: number | null;
   taxAmount: number | null;
   totalAmount: number | null;
+  // 自分の注文だけ表示させるためのメールアドレス
+  createdByEmail: string | null;
 };
 
 type OrdersApiResponse = {
@@ -65,7 +68,10 @@ function getMonthKey(dateStr: string | null): string | null {
 
 export default function AdminOrdersPage() {
   const router = useRouter();
+
   const [email, setEmail] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<"admin" | "agency" | null>(null);
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +80,9 @@ export default function AdminOrdersPage() {
   const [agencyFilter, setAgencyFilter] = useState<string>("all");
   const [monthFilter, setMonthFilter] = useState<string>("all");
 
-  // 認証 & 管理者ロールチェック
+  const isAdmin = userRole === "admin";
+
+  // 認証 & ロール取得
   useEffect(() => {
     async function loadProfile() {
       const { data, error } = await supabase.auth.getUser();
@@ -86,9 +94,8 @@ export default function AdminOrdersPage() {
         return;
       }
 
-      setEmail(data.user.email ?? null);
-
       const user = data.user;
+      setEmail(user.email ?? null);
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
@@ -99,14 +106,15 @@ export default function AdminOrdersPage() {
       if (profileError) {
         console.error("supabase profiles error", profileError);
         setError("プロフィール情報の取得に失敗しました。");
+        // ロールが分からない場合は最低限 agency として扱う
+        setUserRole("agency");
         return;
       }
 
-      if (!profile || profile.role !== "admin") {
-        // 管理者以外は代理店用発注フォームへ
-        router.push("/order");
-        return;
-      }
+      // role が admin のときだけ admin、それ以外は agency 扱い
+      const role =
+        profile && profile.role === "admin" ? "admin" : "agency";
+      setUserRole(role);
     }
 
     loadProfile();
@@ -121,7 +129,7 @@ export default function AdminOrdersPage() {
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
         const json = (await res.json()) as OrdersApiResponse;
-        setOrders(json.orders ?? []);
+        setOrders((json.orders ?? []) as Order[]);
       } catch (e: any) {
         console.error(e);
         setError(e.message ?? "注文一覧の取得でエラーが発生しました。");
@@ -159,9 +167,16 @@ export default function AdminOrdersPage() {
     return keys;
   }, [orders]);
 
-  // フィルタ後の注文
+  // フィルタ後の注文（ロール＆代理店＆月）
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
+      // agency ユーザーは自分の注文だけ
+      if (userRole === "agency") {
+        if (!email || o.createdByEmail !== email) {
+          return false;
+        }
+      }
+
       if (agencyFilter !== "all") {
         if (!o.agencyName || o.agencyName !== agencyFilter) return false;
       }
@@ -171,9 +186,12 @@ export default function AdminOrdersPage() {
       }
       return true;
     });
-  }, [orders, agencyFilter, monthFilter]);
+  }, [orders, userRole, email, agencyFilter, monthFilter]);
 
   async function handleStatusOrPriceSave(order: Order) {
+    // agency は編集不可（念のためガード）
+    if (!isAdmin) return;
+
     setSavingId(order.id);
     setError(null);
 
@@ -234,23 +252,26 @@ export default function AdminOrdersPage() {
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              注文一覧（管理者用）
+              注文一覧{isAdmin ? "（管理者用）" : ""}
             </h1>
             <p className="text-sm text-slate-400">
               代理店経由で登録された発注が一覧で表示されます。
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              ログインメール：{email ?? "未ログイン"}
+              ログインメール：{email ?? "未ログイン"}（ロール：
+              {userRole ?? "-"}）
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/admin/users"
-              className="rounded-md border border-slate-500 bg-slate-700/10 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-600/30"
-            >
-              ユーザー管理
-            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin/users"
+                className="rounded-md border border-slate-500 bg-slate-700/10 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-600/30"
+              >
+                ユーザー管理
+              </Link>
+            )}
             <Link
               href="/order"
               className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
@@ -286,21 +307,24 @@ export default function AdminOrdersPage() {
             </div>
 
             <div className="flex flex-wrap gap-3 text-xs">
-              <div className="space-y-1">
-                <p className="text-slate-400">代理店フィルタ</p>
-                <select
-                  className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1"
-                  value={agencyFilter}
-                  onChange={(e) => setAgencyFilter(e.target.value)}
-                >
-                  <option value="all">すべての代理店</option>
-                  {agencyOptions.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* 代理店フィルタ：admin のみ表示 */}
+              {isAdmin && (
+                <div className="space-y-1">
+                  <p className="text-slate-400">代理店フィルタ</p>
+                  <select
+                    className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1"
+                    value={agencyFilter}
+                    onChange={(e) => setAgencyFilter(e.target.value)}
+                  >
+                    <option value="all">すべての代理店</option>
+                    {agencyOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <p className="text-slate-400">月フィルタ（到着希望日）</p>
@@ -338,7 +362,9 @@ export default function AdminOrdersPage() {
                   <th className="px-4 py-2 text-right">合計(税込)</th>
                   <th className="px-4 py-2 text-center">ステータス</th>
                   <th className="px-4 py-2 text-center">受付日時</th>
-                  <th className="px-4 py-2 text-center">保存</th>
+                  {isAdmin && (
+                    <th className="px-4 py-2 text-center">保存</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -372,6 +398,7 @@ export default function AdminOrdersPage() {
                         type="number"
                         className="w-20 rounded-md border border-slate-700 bg-slate-900 px-1 py-0.5 text-right text-xs"
                         value={order.unitPrice ?? ""}
+                        disabled={!isAdmin}
                         onChange={(e) => {
                           const value =
                             e.target.value === ""
@@ -392,6 +419,7 @@ export default function AdminOrdersPage() {
                         type="number"
                         className="w-16 rounded-md border border-slate-700 bg-slate-900 px-1 py-0.5 text-right text-xs"
                         value={order.taxRate ?? ""}
+                        disabled={!isAdmin}
                         onChange={(e) => {
                           const value =
                             e.target.value === ""
@@ -420,9 +448,10 @@ export default function AdminOrdersPage() {
                       <select
                         className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
                         value={order.status}
+                        disabled={!isAdmin}
                         onChange={(e) => {
-                          const value = e.target
-                            .value as OrderStatus;
+                          const value =
+                            e.target.value as OrderStatus;
                           setOrders((prev) =>
                             prev.map((o) =>
                               o.id === order.id
@@ -446,24 +475,26 @@ export default function AdminOrdersPage() {
                     <td className="px-4 py-2 text-center text-xs text-slate-400 whitespace-nowrap">
                       {formatDateTime(order.createdAt)}
                     </td>
-                    <td className="px-4 py-2 text-center text-xs">
-                      <button
-                        onClick={() =>
-                          handleStatusOrPriceSave(order)
-                        }
-                        disabled={savingId === order.id}
-                        className="rounded-md border border-emerald-500 bg-emerald-600/10 px-2 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
-                      >
-                        {savingId === order.id ? "保存中..." : "保存"}
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-4 py-2 text-center text-xs">
+                        <button
+                          onClick={() =>
+                            handleStatusOrPriceSave(order)
+                          }
+                          disabled={savingId === order.id}
+                          className="rounded-md border border-emerald-500 bg-emerald-600/10 px-2 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
+                        >
+                          {savingId === order.id ? "保存中..." : "保存"}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
 
                 {filteredOrders.length === 0 && !loading && (
                   <tr>
                     <td
-                      colSpan={14}
+                      colSpan={isAdmin ? 14 : 13}
                       className="px-4 py-8 text-center text-xs text-slate-500"
                     >
                       条件に合致する注文はありません。
