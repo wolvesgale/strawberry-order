@@ -15,7 +15,7 @@ type MockProduct = {
   taxRate: number;
 };
 
-const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
+const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
 
 const NATSUAKI_PRICE_TABLE = [
   { pieces: 20, price: 1700 },
@@ -33,7 +33,7 @@ export default function OrderPage() {
   // セット数（シート数）
   const [quantity, setQuantity] = useState<number>(4);
   // 1シートあたりの玉数
-  const [piecesPerSheet, setPiecesPerSheet] = useState<number>(36);
+  const [piecesPerSheet, setPiecesPerSheet] = useState<number>(30);
 
   // お届け先情報
   const [postalAndAddress, setPostalAndAddress] = useState("");
@@ -276,6 +276,9 @@ export default function OrderPage() {
               </tbody>
             </table>
           </div>
+            <p className="mt-2 text-xs text-red-300">
+    ※36玉は現在一時的に販売を休止しているため、ご注文にはお選びいただけません。
+  </p>
         </section>
 
         {/* フォーム本体 */}
@@ -318,7 +321,7 @@ export default function OrderPage() {
               ))}
             </select>
             <p className="text-xs text-slate-500">
-              36玉 / 30玉 / 24玉 / 20玉 から選択します。
+              ※36玉は価格表のみの表示です。現在は 30玉 / 24玉 / 20玉 から選択してください。
             </p>
           </div>
 
