@@ -39,7 +39,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ### Email delivery settings
 
-Set the sender address explicitly via `ORDER_FROM_EMAIL` (fallback: `SES_FROM_EMAIL`).
+Set the sender address explicitly via `ORDER_FROM_EMAIL`.
 The recipient address is configured with `ORDER_TO_EMAIL` and `ORDER_MAIL_MODE=ses`
 when AWS SES should be used.
 

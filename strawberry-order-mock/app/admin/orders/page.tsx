@@ -16,6 +16,7 @@ type Order = {
   quantity: number;
   deliveryDate: string | null;
   agencyName: string | null;
+  createdByEmail: string | null;
   status: OrderStatus;
   createdAt: string;
   unitPrice: number | null;
@@ -83,23 +84,37 @@ export default function AdminOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const visibleOrders = useMemo(() => {
+    if (isAdmin) return orders;
+    if (!email) return [];
+    return orders.filter((order) => order.createdByEmail === email);
+  }, [orders, isAdmin, email]);
+
   const agencyOptions = useMemo(() => {
     const names = Array.from(
       new Set(
-        orders
+        visibleOrders
           .map((o) => o.agencyName)
           .filter((name): name is string => Boolean(name))
       )
     );
     return names;
-  }, [orders]);
+  }, [visibleOrders]);
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+    return visibleOrders.filter((order) => {
       const matchesAgency =
         selectedAgency === "all" || !selectedAgency
           ? true
           : order.agencyName === selectedAgency;
+
+      const targetDate = order.deliveryDate ?? order.createdAt;
+      const targetMonth = targetDate ? targetDate.slice(0, 7) : "";
+      const matchesMonth = selectedMonth ? targetMonth === selectedMonth : true;
+
+      return matchesAgency && matchesMonth;
+    });
+  }, [visibleOrders, selectedAgency, selectedMonth]);
 
       const targetDate = order.deliveryDate ?? order.createdAt;
       const targetMonth = targetDate ? targetDate.slice(0, 7) : "";
@@ -134,14 +149,12 @@ export default function AdminOrdersPage() {
 
       if (profileError) {
         console.error("supabase profiles error", profileError);
-        setError("プロフィール情報の取得に失敗しました。");
-        // ロールが分からない場合は最低限 agency として扱う
-        setUserRole("agency");
+        router.push("/login");
         return;
       }
 
       setEmail(user.email ?? null);
-      setIsAdmin(true);
+      setIsAdmin(profile?.role === "admin");
     }
 
     loadProfile();
@@ -379,39 +392,41 @@ export default function AdminOrdersPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-100">
-              注文一覧（{filteredOrders.length}件）
+              注文一覧（{isAdmin ? filteredOrders.length : visibleOrders.length}件）
             </h2>
             {loading && (
               <p className="text-xs text-slate-400">読み込み中...</p>
             )}
           </div>
 
-          <div className="flex flex-wrap items-end gap-3 text-xs text-slate-100">
-            <label className="space-y-1">
-              <span className="block text-slate-300">代理店フィルタ</span>
-              <select
-                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={selectedAgency}
-                onChange={(e) => setSelectedAgency(e.target.value)}
-              >
-                <option value="all">すべての代理店</option>
-                {agencyOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="block text-slate-300">月フィルタ</span>
-              <input
-                type="month"
-                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-              />
-            </label>
-          </div>
+          {isAdmin && (
+            <div className="flex flex-wrap items-end gap-3 text-xs text-slate-100">
+              <label className="space-y-1">
+                <span className="block text-slate-300">代理店フィルタ</span>
+                <select
+                  className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                  value={selectedAgency}
+                  onChange={(e) => setSelectedAgency(e.target.value)}
+                >
+                  <option value="all">すべての代理店</option>
+                  {agencyOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="block text-slate-300">月フィルタ</span>
+                <input
+                  type="month"
+                  className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                />
+              </label>
+            </div>
+          )}
 
           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
             <table className="min-w-full text-sm">
@@ -434,7 +449,7 @@ export default function AdminOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredOrders.map((order) => {
+                {(isAdmin ? filteredOrders : visibleOrders).map((order) => {
                   const statusSelectable = isAdmin && order.status === "sent";
                   const inputsDisabled = !isAdmin || order.status === "canceled";
                   return (
@@ -553,7 +568,8 @@ export default function AdminOrdersPage() {
                   );
                 })}
 
-                {filteredOrders.length === 0 && !loading && (
+                {(isAdmin ? filteredOrders : visibleOrders).length === 0 &&
+                  !loading && (
                   <tr>
                     <td
                       colSpan={14}

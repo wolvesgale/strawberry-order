@@ -2,7 +2,7 @@
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const REGION = process.env.AWS_REGION || "ap-northeast-1";
-const FROM = process.env.ORDER_FROM_EMAIL ?? process.env.SES_FROM_EMAIL;
+const FROM = process.env.ORDER_FROM_EMAIL;
 const ORDER_TO = process.env.ORDER_TO_EMAIL;
 
 const sesClient = new SESClient({
