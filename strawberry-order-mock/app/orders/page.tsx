@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
 
-export type OrderStatus = "pending" | "shipped" | "canceled";
+export type OrderStatus = "pending" | "sent" | "canceled";
 
 type Order = {
   id: string;
@@ -31,7 +31,7 @@ type OrdersApiResponse = {
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "受付",
-  shipped: "発送済み",
+  sent: "送信済み",
   canceled: "キャンセル",
 };
 
