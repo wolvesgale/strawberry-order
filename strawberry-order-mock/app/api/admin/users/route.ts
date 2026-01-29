@@ -4,7 +4,11 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-type Agency = {
+export const runtime = "nodejs";
+
+type Role = "admin" | "agency";
+
+type AgencyRow = {
   id: string;
   name: string;
   code: string | null;
@@ -119,6 +123,7 @@ function generatePassword(length = 16) {
   return crypto.randomBytes(length).toString("base64url");
 }
 
+// GET: 一覧取得
 export async function GET() {
   const client = ensureSupabase();
   if (!client) {
@@ -337,7 +342,13 @@ export async function PATCH(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as PatchBody;
 
-    if (!body.id) {
+    const id = body.id?.trim();
+    const name = body.name?.trim();
+    const role = body.role;
+    let agencyId = body.agencyId ?? null;
+    const newAgencyName = body.newAgencyName?.trim() ?? "";
+
+    if (!id) {
       return NextResponse.json(
         { error: "ユーザーIDが指定されていません。" },
         { status: 400 }
@@ -425,7 +436,14 @@ export async function PATCH(req: Request) {
           { error: "指定された代理店が存在しません。" },
           { status: 400 }
         );
+      } else if (authUser?.user?.email) {
+        email = authUser.user.email;
       }
+    } catch (e) {
+      console.error(
+        "[/api/admin/users PUT] getUserById exception:",
+        e,
+      );
     }
 
     const { error: updateError } = await client

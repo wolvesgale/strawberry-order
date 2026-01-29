@@ -1,9 +1,10 @@
+// strawberry-order-mock/app/admin/orders/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase } from "@/lib/supabaseClient";
 
 export type OrderStatus = "pending" | "sent" | "canceled";
 
@@ -22,6 +23,8 @@ type Order = {
   subtotal: number | null;
   taxAmount: number | null;
   totalAmount: number | null;
+  // 自分の注文だけ表示させるためのメールアドレス
+  createdByEmail: string | null;
 };
 
 type OrdersApiResponse = {
@@ -58,14 +61,25 @@ function formatCurrency(value: number | null): string {
   return value.toLocaleString("ja-JP");
 }
 
+function getMonthKey(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
 export default function AdminOrdersPage() {
   const router = useRouter();
+
   const [email, setEmail] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<"admin" | "agency" | null>(null);
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedAgency, setSelectedAgency] = useState<string>("all");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -95,21 +109,23 @@ export default function AdminOrdersPage() {
     });
   }, [orders, selectedAgency, selectedMonth]);
 
-  // 認証 + 管理者ロールチェック
+  const isAdmin = userRole === "admin";
+
+  // 認証 & ロール取得
   useEffect(() => {
-    async function checkAuth() {
+    async function loadProfile() {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         console.error("supabase auth error", error);
       }
-
-      const user = data?.user;
-      if (!user) {
+      if (!data?.user) {
         router.push("/login");
         return;
       }
 
-      // profiles から role を取得
+      const user = data.user;
+      setEmail(user.email ?? null);
+
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("role")
@@ -118,13 +134,9 @@ export default function AdminOrdersPage() {
 
       if (profileError) {
         console.error("supabase profiles error", profileError);
-        router.push("/login");
-        return;
-      }
-
-      if (!profile || profile.role !== "admin") {
-        // admin 以外は代理店用の一覧に飛ばす
-        router.push("/agency/orders");
+        setError("プロフィール情報の取得に失敗しました。");
+        // ロールが分からない場合は最低限 agency として扱う
+        setUserRole("agency");
         return;
       }
 
@@ -132,17 +144,19 @@ export default function AdminOrdersPage() {
       setIsAdmin(true);
     }
 
-    checkAuth();
+    loadProfile();
   }, [router]);
 
-  // 注文一覧取得
+  // 注文一覧取得（全件）
   useEffect(() => {
     async function fetchOrders() {
+      setLoading(true);
+      setError(null);
       try {
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
         const json = (await res.json()) as OrdersApiResponse;
-        setOrders(json.orders ?? []);
+        setOrders((json.orders ?? []) as Order[]);
       } catch (e: any) {
         console.error(e);
         setError(e.message ?? "注文一覧の取得でエラーが発生しました。");
@@ -150,25 +164,82 @@ export default function AdminOrdersPage() {
         setLoading(false);
       }
     }
+
     fetchOrders();
   }, []);
 
-  async function updateOrder(
-    id: string,
-    patch: { status?: OrderStatus; unitPrice?: number | null; taxRate?: number | null }
-  ) {
-    setSavingId(id);
+  // 代理店名一覧（フィルタ用）
+  const agencyOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        orders
+          .map((o) => o.agencyName)
+          .filter((name): name is string => Boolean(name))
+      )
+    );
+    names.sort((a, b) => a.localeCompare(b, "ja"));
+    return names;
+  }, [orders]);
+
+  // 月（YYYY-MM）一覧（配達日ベース）
+  const monthOptions = useMemo(() => {
+    const keys = Array.from(
+      new Set(
+        orders
+          .map((o) => getMonthKey(o.deliveryDate ?? o.createdAt))
+          .filter((k): k is string => Boolean(k))
+      )
+    );
+    keys.sort().reverse(); // 新しい月が先頭
+    return keys;
+  }, [orders]);
+
+  // フィルタ後の注文（ロール＆代理店＆月）
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      // agency ユーザーは自分の注文だけ
+      if (userRole === "agency") {
+        if (!email || o.createdByEmail !== email) {
+          return false;
+        }
+      }
+
+      if (agencyFilter !== "all") {
+        if (!o.agencyName || o.agencyName !== agencyFilter) return false;
+      }
+      if (monthFilter !== "all") {
+        const key = getMonthKey(o.deliveryDate ?? o.createdAt);
+        if (key !== monthFilter) return false;
+      }
+      return true;
+    });
+  }, [orders, userRole, email, agencyFilter, monthFilter]);
+
+  async function handleStatusOrPriceSave(order: Order) {
+    // agency は編集不可（念のためガード）
+    if (!isAdmin) return;
+
+    setSavingId(order.id);
     setError(null);
+
     try {
       const res = await fetch("/api/mock-orders", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, ...patch }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: order.id,
+          status: order.status,
+          unitPrice: order.unitPrice,
+          taxRate: order.taxRate,
+        }),
       });
 
       if (!res.ok) {
         const json = await res.json().catch(() => null);
-        throw new Error(json?.error ?? "更新に失敗しました。");
+        const msg = json?.error ?? "更新に失敗しました。";
+        throw new Error(msg);
       }
 
       const json = (await res.json()) as PatchResponse;
@@ -182,7 +253,7 @@ export default function AdminOrdersPage() {
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
     } catch (e: any) {
       console.error(e);
-      setError(e.message ?? "更新に失敗しました。");
+      setError(e.message ?? "更新中にエラーが発生しました。");
     } finally {
       setSavingId(null);
     }
@@ -245,35 +316,43 @@ export default function AdminOrdersPage() {
     });
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push("/login");
+  if (!email && !error && loading) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
+        <div className="max-w-7xl mx-auto">
+          <p className="text-sm text-slate-400">認証情報を確認しています...</p>
+        </div>
+      </main>
+    );
   }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* ヘッダー */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              注文一覧（管理者用）
+              注文一覧{isAdmin ? "（管理者用）" : ""}
             </h1>
             <p className="text-sm text-slate-400">
               代理店経由で登録された発注が一覧で表示されます。
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              ログインメール：{email ?? "未ログイン"}
+              ログインメール：{email ?? "未ログイン"}（ロール：
+              {userRole ?? "-"}）
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/admin/users"
-              className="rounded-md border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-800"
-            >
-              ユーザー管理
-            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin/users"
+                className="rounded-md border border-slate-500 bg-slate-700/10 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-600/30"
+              >
+                ユーザー管理
+              </Link>
+            )}
             <Link
               href="/order"
               className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
@@ -289,12 +368,14 @@ export default function AdminOrdersPage() {
           </div>
         </header>
 
+        {/* エラー表示 */}
         {error && (
           <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
             {error}
           </p>
         )}
 
+        {/* フィルタ */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-100">
@@ -341,9 +422,9 @@ export default function AdminOrdersPage() {
                   <th className="px-4 py-2 text-center">玉数/シート</th>
                   <th className="px-4 py-2 text-center">セット数</th>
                   <th className="px-4 py-2 text-center">到着希望日</th>
-                  <th className="px-4 py-2 text-left">代理店</th>
+                  <th className="px-4 py-2 text-center">代理店</th>
                   <th className="px-4 py-2 text-right">単価</th>
-                  <th className="px-4 py-2 text-right">税率</th>
+                  <th className="px-4 py-2 text-right">税率(%)</th>
                   <th className="px-4 py-2 text-right">小計(税抜)</th>
                   <th className="px-4 py-2 text-right">消費税</th>
                   <th className="px-4 py-2 text-right">合計(税込)</th>
@@ -478,7 +559,7 @@ export default function AdminOrdersPage() {
                       colSpan={14}
                       className="px-4 py-8 text-center text-xs text-slate-500"
                     >
-                      現在登録されている注文はありません。
+                      条件に合致する注文はありません。
                     </td>
                   </tr>
                 )}
