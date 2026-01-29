@@ -31,7 +31,9 @@ type OrdersApiResponse = {
   orders: Order[];
 };
 
-type PatchResponse = { ok: true; order: Order } | { ok: true; deletedId: string };
+type PatchResponse =
+  | { ok: true; order: Order }
+  | { ok: true; deletedId: string };
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "受付",
@@ -41,9 +43,26 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "-";
+
+  // "YYYY-MM-DD" 形式ならそのまま表示（Date に変換すると時差でズレる可能性がある）
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "-";
-  return d.toISOString().slice(0, 10);
+
+  // JSTで日付に寄せる
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+
+  const y = parts.find((p) => p.type === "year")?.value ?? "";
+  const m = parts.find((p) => p.type === "month")?.value ?? "";
+  const day = parts.find((p) => p.type === "day")?.value ?? "";
+  if (!y || !m || !day) return "-";
+  return `${y}-${m}-${day}`;
 }
 
 function formatDateTime(dateStr: string | null): string {
@@ -79,10 +98,9 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedAgency, setSelectedAgency] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
-  const [savingId, setSavingId] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const isAdmin = userRole === "admin";
 
@@ -92,25 +110,27 @@ export default function AdminOrdersPage() {
     return orders.filter((order) => order.createdByEmail === email);
   }, [orders, isAdmin, email]);
 
+  // 代理店フィルタ候補（valueは agencyId、labelは agencyName）
   const agencyOptions = useMemo(() => {
-    const ids = Array.from(
-      new Set(
-        visibleOrders
-          .map((o) => o.agencyId)
-          .filter((v): v is string => Boolean(v))
-      )
-    );
-    return ids;
+    const map = new Map<string, string>();
+    for (const o of visibleOrders) {
+      const id = o.agencyId ?? o.agencyName ?? "";
+      if (!id) continue;
+      map.set(id, o.agencyName ?? id);
+    }
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [visibleOrders]);
 
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
+      const agencyKey = order.agencyId ?? order.agencyName ?? "";
       const matchesAgency =
-        !selectedAgency || selectedAgency === "" || order.agencyId === selectedAgency;
+        !selectedAgency || selectedAgency === "" || agencyKey === selectedAgency;
 
       const targetDate = order.deliveryDate ?? order.createdAt;
       const monthKey = String(targetDate).slice(0, 7);
-      const matchesMonth = !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
+      const matchesMonth =
+        !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
 
       return matchesAgency && matchesMonth;
     });
@@ -156,18 +176,17 @@ export default function AdminOrdersPage() {
       try {
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
-        const json = (await res.json()) as OrdersApiResponse;
 
-        // 既存の挙動を壊さないため、agencyId が空なら agencyName を入れる
+        const json = (await res.json()) as OrdersApiResponse;
         const mappedOrders = (json.orders ?? []).map((order) => ({
           ...order,
+          // 既存を優鼓しつつ、なければ agencyName を使う（あなたの現状仕様を維持）
           agencyId: order.agencyId ?? order.agencyName ?? null,
         }));
-
         setOrders(mappedOrders);
       } catch (e: any) {
         console.error(e);
-        setError(e.message ?? "注文一覧の取得でエラーが発生しました。");
+        setError(e?.message ?? "注文一覧の取得でエラーが発生しました。");
       } finally {
         setLoading(false);
       }
@@ -178,7 +197,11 @@ export default function AdminOrdersPage() {
 
   async function updateOrder(
     order: Order,
-    patch: { status?: OrderStatus; unitPrice?: number | null; taxRate?: number | null }
+    patch: {
+      status?: OrderStatus;
+      unitPrice?: number | null;
+      taxRate?: number | null;
+    }
   ) {
     setSavingId(order.id);
     setError(null);
@@ -207,7 +230,7 @@ export default function AdminOrdersPage() {
       setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     } catch (e: any) {
       console.error(e);
-      setError(e.message ?? "更新中にエラーが発生しました。");
+      setError(e?.message ?? "更新中にエラーが発生しました。");
     } finally {
       setSavingId(null);
     }
@@ -273,7 +296,6 @@ export default function AdminOrdersPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* ヘッダー */}
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
@@ -311,17 +333,17 @@ export default function AdminOrdersPage() {
           </div>
         </header>
 
-        {/* エラー表示 */}
         {error && (
           <p className="text-sm text-red-100 bg-red-900/40 border border-red-700 rounded-md px-3 py-2">
             {error}
           </p>
         )}
 
-        {/* フィルタ */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-100">注文一覧（{rows.length}件）</h2>
+            <h2 className="text-sm font-semibold text-slate-100">
+              注文一覧（{rows.length}件）
+            </h2>
             {loading && <p className="text-xs text-slate-400">読み込み中...</p>}
           </div>
 
@@ -335,9 +357,9 @@ export default function AdminOrdersPage() {
                   onChange={(e) => setSelectedAgency(e.target.value)}
                 >
                   <option value="">すべての代理店</option>
-                  {agencyOptions.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
+                  {agencyOptions.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
@@ -374,12 +396,16 @@ export default function AdminOrdersPage() {
                   <th className="px-4 py-2 text-center">操作</th>
                 </tr>
               </thead>
+
               <tbody>
                 {rows.map((order) => {
                   const statusSelectable = isAdmin && order.status === "sent";
                   const inputsDisabled = !isAdmin || order.status === "canceled";
                   return (
-                    <tr key={order.id} className="border-t border-slate-800 hover:bg-slate-900/60">
+                    <tr
+                      key={order.id}
+                      className="border-t border-slate-800 hover:bg-slate-900/60"
+                    >
                       <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-200">
                         {order.orderNumber}
                       </td>
