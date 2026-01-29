@@ -34,3 +34,16 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Operational notes
+
+### Email delivery settings
+
+Set the sender address explicitly via `ORDER_FROM_EMAIL`.
+The recipient address is configured with `ORDER_TO_EMAIL` and `ORDER_MAIL_MODE=ses`
+when AWS SES should be used.
+
+### Email send tracking migration
+
+Apply the SQL migration in `supabase/migrations/` to add `email_sent_at` and
+`email_message_id`, and to normalize legacy `shipped` statuses to `sent`.
