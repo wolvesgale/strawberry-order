@@ -6,7 +6,7 @@ const REGION =
   process.env.AWS_DEFAULT_REGION ||
   "ap-northeast-1";
 
-// ★ 修正：Vercel 側のキー（SES_FROM_EMAIL）を優先しつつ後方互換も残す
+// Vercel 側のキー（SES_FROM_EMAIL）を優先しつつ後方互換も残す
 const FROM =
   process.env.SES_FROM_EMAIL ||
   process.env.ORDER_FROM_EMAIL ||
@@ -14,12 +14,32 @@ const FROM =
   process.env.SES_FROM ||
   undefined;
 
-// 受信側（これはログ上すでに取れている）
+// To（仕入れ先）
 const ORDER_TO =
   process.env.ORDER_TO_EMAIL ||
   process.env.ORDER_TO ||
   process.env.ORDER_TO_ADDRESS ||
   undefined;
+
+// ★追加：CC（Vercel で設定している想定のキーを優先しつつ後方互換）
+const ORDER_CC_RAW =
+  process.env.ORDER_CC_EMAIL ||
+  process.env.ORDER_CC ||
+  process.env.ORDER_CC_ADDRESS ||
+  process.env.ORDER_CC_ADDRESSES ||
+  process.env.ORDER_CC_EMAILS ||
+  undefined;
+
+// "a@x.com,b@y.com" / "a@x.com b@y.com" / 改行区切りなどを許容
+function parseEmailList(raw?: string): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[\s,;]+/g)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+const DEFAULT_CC = parseEmailList(ORDER_CC_RAW);
 
 const sesClient = new SESClient({
   region: REGION,
@@ -37,7 +57,7 @@ export type OrderEmailPayload = {
   bodyText: string;
   /** 仕入れ先を個別指定したい場合だけ使用。通常は環境変数 ORDER_TO_EMAIL を使用 */
   to?: string;
-  /** 互換用に残しているが、現在の実装では CC 送信は行わない */
+  /** CC 宛先（指定があれば env より優先） */
   cc?: string[];
 };
 
@@ -49,11 +69,23 @@ export async function sendOrderEmail({
 }: OrderEmailPayload): Promise<string | null> {
   const resolvedTo = to ?? ORDER_TO;
 
+  // cc が渡されていればそれを優先。なければ env の DEFAULT_CC を使用
+  const resolvedCc = (cc && cc.length > 0 ? cc : DEFAULT_CC)
+    .map((s) => String(s).trim())
+    .filter((s) => s.length > 0);
+
+  // To と CC の重複排除（同一アドレスが両方に入るのを避ける）
+  const ccDeduped = resolvedTo
+    ? resolvedCc.filter((addr) => addr !== resolvedTo)
+    : resolvedCc;
+
   console.log("[SES] sendOrderEmail env", {
     REGION,
     FROM,
     ORDER_TO,
+    ORDER_CC_RAW,
     resolvedTo,
+    resolvedCc: ccDeduped,
   });
 
   if (!REGION || !FROM) {
@@ -68,16 +100,18 @@ export async function sendOrderEmail({
     return null;
   }
 
-  if (cc && cc.length > 0) {
-    console.warn("[SES] cc is provided but ignored in current configuration:", cc);
-  }
-
-  console.log("[SES] Sending email", { subject, to: resolvedTo });
+  console.log("[SES] Sending email", {
+    subject,
+    to: resolvedTo,
+    cc: ccDeduped,
+  });
 
   const command = new SendEmailCommand({
     Source: FROM,
     Destination: {
       ToAddresses: [resolvedTo],
+      // ★ここが本命：CC を指定（空なら付けない）
+      ...(ccDeduped.length > 0 ? { CcAddresses: ccDeduped } : {}),
     },
     Message: {
       Subject: { Data: subject, Charset: "UTF-8" },
