@@ -197,7 +197,7 @@ export default function OrderPage() {
 
       // 入力値リセット（商品選択だけ維持）
       setQuantity(4);
-      setPiecesPerSheet(36);
+      setPiecesPerSheet(30);
       setPostalAndAddress("");
       setRecipientName("");
       setPhoneNumber("");
@@ -251,7 +251,6 @@ export default function OrderPage() {
           </div>
         </header>
 
-        {/* 夏秋苺 価格表 */}
         <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-100">
             夏秋苺 価格表（税抜）
@@ -276,9 +275,9 @@ export default function OrderPage() {
               </tbody>
             </table>
           </div>
-            <p className="mt-2 text-xs text-red-300">
-    ※36玉は現在一時的に販売を休止しているため、ご注文にはお選びいただけません。
-  </p>
+          <p className="mt-2 text-xs font-semibold text-red-300">
+            36玉は現在販売休止中のため、発注フォームでは選択できません。
+          </p>
         </section>
 
         {/* フォーム本体 */}
@@ -321,7 +320,7 @@ export default function OrderPage() {
               ))}
             </select>
             <p className="text-xs text-slate-500">
-              ※36玉は価格表のみの表示です。現在は 30玉 / 24玉 / 20玉 から選択してください。
+              30玉 / 24玉 / 20玉 から選択します。
             </p>
           </div>
 
