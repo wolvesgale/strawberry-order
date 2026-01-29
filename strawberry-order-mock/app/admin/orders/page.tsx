@@ -16,6 +16,7 @@ type Order = {
   quantity: number;
   deliveryDate: string | null;
   agencyName: string | null;
+  agencyId: string | null;
   createdByEmail: string | null;
   status: OrderStatus;
   createdAt: string;
@@ -105,7 +106,7 @@ export default function AdminOrdersPage() {
     const names = Array.from(
       new Set(
         visibleOrders
-          .map((o) => o.agencyName)
+          .map((o) => o.agencyId)
           .filter((name): name is string => Boolean(name))
       )
     );
@@ -114,7 +115,17 @@ export default function AdminOrdersPage() {
 
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
-      const matchesAgency = !selectedAgency || order.agencyName === selectedAgency;
+      const matchesAgency =
+        !selectedAgency || selectedAgency === "" || order.agencyId === selectedAgency;
+
+      const targetDate = order.deliveryDate ?? order.createdAt;
+      const monthKey = String(targetDate).slice(0, 7);
+      const matchesMonth =
+        !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
+
+      return matchesAgency && matchesMonth;
+    });
+  }, [visibleOrders, selectedAgency, selectedMonth]);
 
       const targetDate = order.deliveryDate ?? order.createdAt;
       const matchesMonth =
@@ -177,7 +188,11 @@ export default function AdminOrdersPage() {
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
         const json = (await res.json()) as OrdersApiResponse;
-        setOrders((json.orders ?? []) as Order[]);
+        const mappedOrders = (json.orders ?? []).map((order) => ({
+          ...order,
+          agencyId: order.agencyName ?? null,
+        }));
+        setOrders(mappedOrders);
       } catch (e: any) {
         console.error(e);
         setError(e.message ?? "注文一覧の取得でエラーが発生しました。");

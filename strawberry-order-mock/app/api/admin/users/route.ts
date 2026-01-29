@@ -14,6 +14,8 @@ export const runtime = "nodejs";
 
 export const runtime = "nodejs";
 
+export const runtime = "nodejs";
+
 type Role = "admin" | "agency";
 
 type AgencyRow = {
@@ -125,6 +127,10 @@ async function fetchEmailsByProfileIds(ids: string[]) {
   }
 
   return emails;
+}
+
+function generatePassword(length = 16) {
+  return crypto.randomBytes(length).toString("base64url");
 }
 
 function generatePassword(length = 16) {
@@ -350,6 +356,12 @@ export async function PATCH(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as PatchBody;
 
+    const { data: profile, error: profileError } = await client
+      .from("profiles")
+      .select("id, display_name, role, agency_id, email")
+      .eq("id", body.id)
+      .maybeSingle();
+
     if (profileError) {
       console.error("[/api/admin/users PATCH] fetch profile error", profileError);
       return NextResponse.json(
@@ -440,14 +452,35 @@ export async function PATCH(req: Request) {
           { status: 400 }
         );
       }
-
-      if (!existingAgency) {
-        return NextResponse.json(
-          { error: "指定された代理店が存在しません。" },
-          { status: 400 }
-        );
-      }
       updates.role = role;
+    }
+
+    if (agencyId !== undefined) {
+      if (agencyId) {
+        const { data: agency, error: agencyError } = await client
+          .from("agencies")
+          .select("id")
+          .eq("id", agencyId)
+          .maybeSingle();
+
+        if (agencyError) {
+          console.error("[/api/admin/users PUT] agency lookup error", agencyError);
+          return NextResponse.json(
+            { error: "代理店情報の確認に失敗しました。" },
+            { status: 500 }
+          );
+        }
+
+        if (!agency) {
+          return NextResponse.json(
+            { error: "指定された代理店が存在しません。" },
+            { status: 400 }
+          );
+        }
+        updates.agency_id = agencyId;
+      } else {
+        updates.agency_id = null;
+      }
     }
 
     const { error: updateError } = await client
