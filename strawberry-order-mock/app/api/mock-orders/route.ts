@@ -4,7 +4,7 @@ import { PRODUCTS } from "../mock-products/route";
 
 export const runtime = "nodejs";
 
-export type OrderStatus = "pending" | "shipped" | "canceled";
+export type OrderStatus = "pending" | "sent" | "canceled";
 
 export type MockOrder = {
   id: string;
@@ -31,6 +31,15 @@ export type MockOrder = {
 
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
+// 夏秋苺（税抜）価格マスタ：pieces_per_sheet -> unitPrice
+const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
+  20: 1700,
+  24: 1600,
+  30: 1550,
+  36: 1300,
+};
+const DEFAULT_TAX_RATE = 10; // 10%
+
 function ensureSupabase() {
   if (!supabaseAdmin) {
     console.error(
@@ -47,29 +56,6 @@ function getMinDeliveryDate(): Date {
   d.setDate(d.getDate() + 3);
   d.setHours(0, 0, 0, 0);
   return d;
-}
-
-// 夏秋苺 価格テーブル（玉数ごと）
-const PRICE_TABLE_NATSUAKI: Record<number, number> = {
-  20: 1600,
-  24: 1500,
-  30: 1450,
-  36: 1200,
-};
-
-function getUnitPriceForOrder(
-  productName: string,
-  piecesPerSheet: number | null
-): number | null {
-  if (piecesPerSheet == null) return null;
-  const price = PRICE_TABLE_NATSUAKI[piecesPerSheet];
-  if (typeof price === "number") return price;
-
-  console.warn("[mock-orders] 未定義の玉数の単価", {
-    productName,
-    piecesPerSheet,
-  });
-  return null;
 }
 
 /**
@@ -133,28 +119,45 @@ export async function GET(req: NextRequest) {
 
     const rows = (data ?? []) as any[];
 
-    const orders: MockOrder[] = rows.map((r) => ({
-      id: r.id,
-      orderNumber: r.order_number,
-      productId: r.product_id ?? null,
-      productName: r.product_name ?? "",
-      piecesPerSheet: r.pieces_per_sheet ?? null,
-      quantity: r.quantity ?? 0,
-      postalAndAddress: r.postal_and_address ?? "",
-      recipientName: r.recipient_name ?? "",
-      phoneNumber: r.phone_number ?? "",
-      deliveryDate: r.delivery_date ?? null,
-      deliveryTimeNote: r.delivery_time_note ?? null,
-      agencyName: r.agency_name ?? null,
-      createdByEmail: r.created_by_email ?? null,
-      status: (r.status as OrderStatus) ?? "pending",
-      createdAt: r.created_at ?? new Date().toISOString(),
-      unitPrice: r.unit_price ?? null,
-      taxRate: r.tax_rate ?? null,
-      subtotal: r.subtotal ?? null,
-      taxAmount: r.tax_amount ?? null,
-      totalAmount: r.total_amount ?? null,
-    }));
+    const orders: MockOrder[] = rows.map((r) => {
+      const unitPriceFromMaster =
+        r.pieces_per_sheet != null
+          ? NATSUAKI_STRAWBERRY_PRICES[r.pieces_per_sheet as number]
+          : undefined;
+
+      const unitPrice = r.unit_price ?? unitPriceFromMaster ?? null;
+      const taxRate = r.tax_rate ?? DEFAULT_TAX_RATE;
+      const rawStatus = r.status as string | null;
+      const status: OrderStatus =
+        rawStatus === "shipped"
+          ? "sent"
+          : rawStatus === "sent" || rawStatus === "pending" || rawStatus === "canceled"
+          ? rawStatus
+          : "pending";
+
+      return {
+        id: r.id,
+        orderNumber: r.order_number,
+        productId: r.product_id ?? null,
+        productName: r.product_name ?? "",
+        piecesPerSheet: r.pieces_per_sheet ?? null,
+        quantity: r.quantity ?? 0,
+        postalAndAddress: r.postal_and_address ?? "",
+        recipientName: r.recipient_name ?? "",
+        phoneNumber: r.phone_number ?? "",
+        deliveryDate: r.delivery_date ?? null,
+        deliveryTimeNote: r.delivery_time_note ?? null,
+        agencyName: r.agency_name ?? null,
+        createdByEmail: r.created_by_email ?? null,
+        status,
+        createdAt: r.created_at ?? new Date().toISOString(),
+        unitPrice,
+        taxRate,
+        subtotal: r.subtotal ?? null,
+        taxAmount: r.tax_amount ?? null,
+        totalAmount: r.total_amount ?? null,
+      };
+    });
 
     return NextResponse.json({ orders });
   } catch (error: any) {
@@ -253,7 +256,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
+    const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
     if (
       !piecesPerSheet ||
       !PIECES_PER_SHEET_OPTIONS.includes(Number(piecesPerSheet))
@@ -305,7 +308,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const now = new Date();
+    const now = new Date(
+      new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })
+    );
 
     // ===== 注文番号（ORD-YYYYMMDD-XXXX） =====
     const yyyy = now.getFullYear();
@@ -335,7 +340,7 @@ export async function POST(request: NextRequest) {
     const seq = (count ?? 0) + 1;
     const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
 
-    // ===== 金額：body > 価格テーブル > PRODUCTS の順に採用 =====
+    // ===== 金額：body > 夏秋苺価格マスタ > PRODUCTS の順に採用 =====
     let unitPrice: number | null =
       typeof body.unitPrice === "number" ? body.unitPrice : null;
     let taxRate: number | null =
@@ -344,8 +349,17 @@ export async function POST(request: NextRequest) {
     const piecesNum =
       piecesPerSheet != null ? Number(piecesPerSheet) : null;
 
-    if (unitPrice == null) {
-      unitPrice = getUnitPriceForOrder(productName, piecesNum);
+    if (unitPrice == null && piecesNum != null) {
+      const candidate = NATSUAKI_STRAWBERRY_PRICES[piecesNum];
+      if (typeof candidate === "number") {
+        unitPrice = candidate;
+      }
+    }
+
+    if (taxRate == null && piecesNum != null) {
+      if (NATSUAKI_STRAWBERRY_PRICES[piecesNum] != null) {
+        taxRate = DEFAULT_TAX_RATE;
+      }
     }
 
     if ((unitPrice == null || taxRate == null) && productId) {
@@ -422,7 +436,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const saved: MockOrder = {
+    let saved: MockOrder = {
       id: data.id,
       orderNumber: data.order_number,
       productId: data.product_id ?? productId,
@@ -446,12 +460,16 @@ export async function POST(request: NextRequest) {
     };
 
     // ===== メール送信 =====
+    console.log("[/api/mock-orders POST] sending order email", {
+      orderNumber: saved.orderNumber,
+      mode: ORDER_MAIL_MODE,
+    });
     const agencyLabel =
       saved.agencyName && saved.agencyName.trim().length > 0
         ? saved.agencyName.trim()
         : "代理店名未設定";
 
-    const orderDateStr = saved.createdAt.slice(0, 10);
+    const orderDateStr = now.toISOString().slice(0, 10);
 
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
@@ -480,19 +498,101 @@ export async function POST(request: NextRequest) {
 
     const bodyText = mailLines.join("\n");
 
+    let messageId: string | null = null;
     if (ORDER_MAIL_MODE === "ses") {
       const { sendOrderEmail } = await import("@/lib/ses");
       try {
-        await sendOrderEmail({ subject, bodyText });
+        messageId = await sendOrderEmail({ subject, bodyText });
+        if (!messageId) {
+          console.error("[SES] Missing MessageId after send attempt.", {
+            orderNumber: saved.orderNumber,
+          });
+          return NextResponse.json(
+            { error: "メール送信に失敗しました。" },
+            { status: 500 }
+          );
+        }
         console.log("[SES] Order mail sent", {
           orderNumber: saved.orderNumber,
+          messageId,
         });
       } catch (err) {
         console.error("[SES] Failed to send order mail", err);
+        return NextResponse.json(
+          { error: "メール送信に失敗しました。" },
+          { status: 500 }
+        );
       }
     } else {
       console.log("[MOCK EMAIL] 発注メール送信:", { subject, bodyText });
+      messageId = "mock";
     }
+
+    const emailSentAt = new Date().toISOString();
+    const { data: sentData, error: sentError } = await client
+      .from("orders")
+      .update({
+        status: "sent",
+        email_sent_at: emailSentAt,
+        email_message_id: messageId,
+      })
+      .eq("id", saved.id)
+      .select(
+        `
+        id,
+        order_number,
+        product_id,
+        product_name,
+        pieces_per_sheet,
+        quantity,
+        postal_and_address,
+        recipient_name,
+        phone_number,
+        delivery_date,
+        delivery_time_note,
+        agency_name,
+        created_by_email,
+        status,
+        unit_price,
+        tax_rate,
+        subtotal,
+        tax_amount,
+        total_amount,
+        created_at
+      `
+      )
+      .single();
+
+    if (sentError) {
+      console.error("[/api/mock-orders POST] update sent status error:", sentError);
+      return NextResponse.json(
+        { error: "メール送信後の状態更新に失敗しました。" },
+        { status: 500 }
+      );
+    }
+
+    saved = {
+      id: sentData.id,
+      orderNumber: sentData.order_number,
+      productId: sentData.product_id ?? productId,
+      productName: sentData.product_name ?? productName,
+      piecesPerSheet: sentData.pieces_per_sheet ?? piecesPerSheet,
+      quantity: sentData.quantity ?? quantity,
+      postalAndAddress: sentData.postal_and_address ?? postalAndAddress,
+      recipientName: sentData.recipient_name ?? recipientName,
+      phoneNumber: sentData.phone_number ?? phoneNumber,
+      deliveryDate: sentData.delivery_date ?? deliveryDate,
+      deliveryTimeNote: sentData.delivery_time_note ?? deliveryTimeNote,
+      agencyName: sentData.agency_name ?? agencyName,
+      createdByEmail: sentData.created_by_email ?? createdByEmail,
+      status: (sentData.status as OrderStatus) ?? "sent",
+      createdAt: sentData.created_at ?? now.toISOString(),
+      unitPrice: sentData.unit_price ?? unitPrice,
+      taxRate: sentData.tax_rate ?? taxRate,
+      subtotal: sentData.subtotal ?? subtotal,
+      taxAmount: sentData.tax_amount ?? taxAmount,
+      totalAmount: sentData.total_amount ?? totalAmount,
+    };
 
     return NextResponse.json({ ok: true, order: saved });
   } catch (error: any) {
@@ -540,12 +640,26 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const allowed: OrderStatus[] = ["pending", "shipped", "canceled"];
+    const allowed: OrderStatus[] = ["pending", "sent", "canceled"];
     if (!allowed.includes(status)) {
       return NextResponse.json(
         { error: "不正なステータスです。" },
         { status: 400 }
       );
+    }
+
+    if (status === "canceled") {
+      const { error } = await client.from("orders").delete().eq("id", id);
+
+      if (error) {
+        console.error("[/api/mock-orders PATCH] Supabase delete error:", error);
+        return NextResponse.json(
+          { error: `注文の削除に失敗しました: ${error.message}` },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ ok: true, deletedId: id });
     }
 
     // 金額再計算（単価/税率が送られてきた場合）
