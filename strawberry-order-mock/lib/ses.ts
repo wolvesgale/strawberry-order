@@ -2,7 +2,7 @@
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const REGION = process.env.AWS_REGION || "ap-northeast-1";
-const FROM = process.env.SES_FROM_EMAIL;
+const FROM = process.env.ORDER_FROM_EMAIL;
 const ORDER_TO = process.env.ORDER_TO_EMAIL;
 
 const sesClient = new SESClient({
@@ -30,7 +30,7 @@ export async function sendOrderEmail({
   bodyText,
   to,
   cc,
-}: OrderEmailPayload): Promise<void> {
+}: OrderEmailPayload): Promise<string | null> {
   const resolvedTo = to ?? ORDER_TO;
 
   // デバッグ用ログ（CC 関連はもう使っていない）
@@ -43,14 +43,14 @@ export async function sendOrderEmail({
 
   if (!FROM || !REGION) {
     console.warn("[SES] Missing FROM or REGION. Skip sending email.");
-    return;
+    return null;
   }
 
   if (!resolvedTo) {
     console.warn(
       "[SES] No recipient specified (ORDER_TO_EMAIL not set, and no 'to' provided). Skipping send."
     );
-    return;
+    return null;
   }
 
   // もし cc が渡されても、現在は使用しない方針
@@ -89,6 +89,7 @@ export async function sendOrderEmail({
   try {
     const resp = await sesClient.send(command);
     console.log("[SES] SendEmail success", resp);
+    return resp?.MessageId ?? null;
   } catch (err) {
     console.error("[SES SEND ERROR]", err);
     throw err;
