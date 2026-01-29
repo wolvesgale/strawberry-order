@@ -25,9 +25,6 @@ type Order = {
   subtotal: number | null;
   taxAmount: number | null;
   totalAmount: number | null;
-  // 自分の注文だけ表示させるためのメールアドレス
-  createdByEmail: string | null;
-};
 
 type OrdersApiResponse = {
   orders: Order[];
@@ -94,38 +91,40 @@ export default function AdminOrdersPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
 
-  const visibleOrders = useMemo(() => {
-    if (isAdmin) return orders;
-    if (!email) return [];
-    return orders.filter((order) => order.createdByEmail === email);
-  }, [orders, isAdmin, email]);
+const isAdmin = userRole === "admin";
 
-  const agencyOptions = useMemo(() => {
-    const names = Array.from(
-      new Set(
-        visibleOrders
-          .map((o) => o.agencyId)
-          .filter((name): name is string => Boolean(name))
-      )
-    );
-    return names;
-  }, [visibleOrders]);
+const visibleOrders = useMemo(() => {
+  if (isAdmin) return orders;
+  if (!email) return [];
+  return orders.filter((order) => order.createdByEmail === email);
+}, [orders, isAdmin, email]);
 
-  const filteredOrders = useMemo(() => {
-    return visibleOrders.filter((order) => {
-      const matchesAgency =
-        !selectedAgency || selectedAgency === "" || order.agencyId === selectedAgency;
+const agencyOptions = useMemo(() => {
+  const ids = Array.from(
+    new Set(
+      visibleOrders
+        .map((o) => o.agencyId)
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+  return ids;
+}, [visibleOrders]);
 
-      const targetDate = order.deliveryDate ?? order.createdAt;
-      const monthKey = String(targetDate).slice(0, 7);
-      const matchesMonth =
-        !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
+const filteredOrders = useMemo(() => {
+  return visibleOrders.filter((order) => {
+    const matchesAgency =
+      !selectedAgency || selectedAgency === "" || order.agencyId === selectedAgency;
 
-      return matchesAgency && matchesMonth;
-    });
-  }, [visibleOrders, selectedAgency, selectedMonth]);
+    const targetDate = order.deliveryDate ?? order.createdAt;
+    const monthKey = String(targetDate).slice(0, 7);
+    const matchesMonth =
+      !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
+
+    return matchesAgency && matchesMonth;
+  });
+}, [visibleOrders, selectedAgency, selectedMonth]);
+
 
       const targetDate = order.deliveryDate ?? order.createdAt;
       const matchesMonth =
@@ -173,7 +172,7 @@ export default function AdminOrdersPage() {
       }
 
       setEmail(user.email ?? null);
-      setIsAdmin(profile?.role === "admin");
+      setUserRole(profile?.role ?? null);
     }
 
     loadProfile();
