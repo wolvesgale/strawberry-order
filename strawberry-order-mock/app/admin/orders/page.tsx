@@ -78,7 +78,7 @@ export default function AdminOrdersPage() {
   const [userRole, setUserRole] = useState<"admin" | "agency" | null>(null);
 
   const [orders, setOrders] = useState<Order[]>([]);
-  const [selectedAgency, setSelectedAgency] = useState<string>("all");
+  const [selectedAgency, setSelectedAgency] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,34 +103,15 @@ export default function AdminOrdersPage() {
 
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
-      const matchesAgency =
-        selectedAgency === "all" || !selectedAgency
-          ? true
-          : order.agencyName === selectedAgency;
+      const matchesAgency = !selectedAgency || order.agencyName === selectedAgency;
 
       const targetDate = order.deliveryDate ?? order.createdAt;
-      const targetMonth = targetDate ? targetDate.slice(0, 7) : "";
-      const matchesMonth = selectedMonth ? targetMonth === selectedMonth : true;
+      const matchesMonth =
+        !selectedMonth || String(targetDate).slice(0, 7) === selectedMonth;
 
       return matchesAgency && matchesMonth;
     });
   }, [visibleOrders, selectedAgency, selectedMonth]);
-
-      const targetDate = order.deliveryDate ?? order.createdAt;
-      const targetMonth = targetDate ? targetDate.slice(0, 7) : "";
-      const matchesMonth = selectedMonth ? targetMonth === selectedMonth : true;
-
-      return matchesAgency && matchesMonth;
-    });
-  }, [visibleOrders, selectedAgency, selectedMonth]);
-
-      const targetDate = order.deliveryDate ?? order.createdAt;
-      const targetMonth = targetDate ? targetDate.slice(0, 7) : "";
-      const matchesMonth = selectedMonth ? targetMonth === selectedMonth : true;
-
-      return matchesAgency && matchesMonth;
-    });
-  }, [orders, selectedAgency, selectedMonth]);
 
   const isAdmin = userRole === "admin";
 
@@ -359,7 +340,7 @@ export default function AdminOrdersPage() {
                   value={selectedAgency}
                   onChange={(e) => setSelectedAgency(e.target.value)}
                 >
-                  <option value="all">すべての代理店</option>
+                  <option value="">すべての代理店</option>
                   {agencyOptions.map((name) => (
                     <option key={name} value={name}>
                       {name}
