@@ -308,7 +308,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const now = new Date();
+    const now = new Date(
+      new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })
+    );
 
     // ===== 注文番号（ORD-YYYYMMDD-XXXX） =====
     const yyyy = now.getFullYear();
@@ -467,7 +469,7 @@ export async function POST(request: NextRequest) {
         ? saved.agencyName.trim()
         : "代理店名未設定";
 
-    const orderDateStr = saved.createdAt.slice(0, 10);
+    const orderDateStr = now.toISOString().slice(0, 10);
 
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 

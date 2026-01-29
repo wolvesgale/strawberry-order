@@ -53,8 +53,19 @@ function formatDateTime(dateStr: string | null): string {
   if (!dateStr) return "-";
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "-";
-  const iso = d.toISOString();
-  return iso.replace("T", " ").slice(0, 19);
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  })
+    .format(d)
+    .replace(/\//g, "-")
+    .replace(",", "");
 }
 
 function formatCurrency(value: number | null): string {
@@ -104,6 +115,14 @@ export default function AdminOrdersPage() {
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
       const matchesAgency = !selectedAgency || order.agencyName === selectedAgency;
+
+      const targetDate = order.deliveryDate ?? order.createdAt;
+      const matchesMonth =
+        !selectedMonth || String(targetDate).slice(0, 7) === selectedMonth;
+
+      return matchesAgency && matchesMonth;
+    });
+  }, [visibleOrders, selectedAgency, selectedMonth]);
 
       const targetDate = order.deliveryDate ?? order.createdAt;
       const matchesMonth =
