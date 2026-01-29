@@ -31,9 +31,7 @@ type OrdersApiResponse = {
   orders: Order[];
 };
 
-type PatchResponse =
-  | { ok: true; order: Order }
-  | { ok: true; deletedId: string };
+type PatchResponse = { ok: true; order: Order } | { ok: true; deletedId: string };
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "受付",
@@ -72,16 +70,6 @@ function formatCurrency(value: number | null): string {
   return value.toLocaleString("ja-JP");
 }
 
-// ※現状未使用だが既存コードのまま残す（影響最小化）
-function getMonthKey(dateStr: string | null): string | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-}
-
 export default function AdminOrdersPage() {
   const router = useRouter();
 
@@ -91,11 +79,10 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedAgency, setSelectedAgency] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // ★ updateOrder 内で使われているのに state が無かったので追加（影響最小）
-  const [savingId, setSavingId] = useState<string | null>(null);
 
   const isAdmin = userRole === "admin";
 
@@ -116,18 +103,14 @@ export default function AdminOrdersPage() {
     return ids;
   }, [visibleOrders]);
 
-  // ★ ここは “1つだけ” にする（残骸ブロックを完全削除）
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
       const matchesAgency =
-        !selectedAgency ||
-        selectedAgency === "" ||
-        order.agencyId === selectedAgency;
+        !selectedAgency || selectedAgency === "" || order.agencyId === selectedAgency;
 
       const targetDate = order.deliveryDate ?? order.createdAt;
       const monthKey = String(targetDate).slice(0, 7);
-      const matchesMonth =
-        !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
+      const matchesMonth = !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
 
       return matchesAgency && matchesMonth;
     });
@@ -137,9 +120,8 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     async function loadProfile() {
       const { data, error } = await supabase.auth.getUser();
-      if (error) {
-        console.error("supabase auth error", error);
-      }
+      if (error) console.error("supabase auth error", error);
+
       if (!data?.user) {
         router.push("/login");
         return;
@@ -160,7 +142,7 @@ export default function AdminOrdersPage() {
         return;
       }
 
-      setUserRole(profile?.role ?? null);
+      setUserRole((profile?.role as "admin" | "agency" | null) ?? null);
     }
 
     loadProfile();
@@ -176,10 +158,10 @@ export default function AdminOrdersPage() {
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
         const json = (await res.json()) as OrdersApiResponse;
 
-        // 既存挙動を維持（agencyId が無い/不安定な場合の暫定マッピング）
+        // 既存の挙動を壊さないため、agencyId が空なら agencyName を入れる
         const mappedOrders = (json.orders ?? []).map((order) => ({
           ...order,
-          agencyId: order.agencyId ?? (order.agencyName ?? null),
+          agencyId: order.agencyId ?? order.agencyName ?? null,
         }));
 
         setOrders(mappedOrders);
@@ -233,14 +215,7 @@ export default function AdminOrdersPage() {
 
   function handleStatusChange(id: string, value: string) {
     setOrders((prev) =>
-      prev.map((o) =>
-        o.id === id
-          ? {
-              ...o,
-              status: value as OrderStatus,
-            }
-          : o
-      )
+      prev.map((o) => (o.id === id ? { ...o, status: value as OrderStatus } : o))
     );
   }
 
@@ -293,6 +268,8 @@ export default function AdminOrdersPage() {
     router.push("/login");
   }
 
+  const rows = isAdmin ? filteredOrders : visibleOrders;
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -344,9 +321,7 @@ export default function AdminOrdersPage() {
         {/* フィルタ */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-100">
-              注文一覧（{isAdmin ? filteredOrders.length : visibleOrders.length}件）
-            </h2>
+            <h2 className="text-sm font-semibold text-slate-100">注文一覧（{rows.length}件）</h2>
             {loading && <p className="text-xs text-slate-400">読み込み中...</p>}
           </div>
 
@@ -360,9 +335,9 @@ export default function AdminOrdersPage() {
                   onChange={(e) => setSelectedAgency(e.target.value)}
                 >
                   <option value="">すべての代理店</option>
-                  {agencyOptions.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
+                  {agencyOptions.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
                     </option>
                   ))}
                 </select>
@@ -400,14 +375,11 @@ export default function AdminOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {(isAdmin ? filteredOrders : visibleOrders).map((order) => {
+                {rows.map((order) => {
                   const statusSelectable = isAdmin && order.status === "sent";
                   const inputsDisabled = !isAdmin || order.status === "canceled";
                   return (
-                    <tr
-                      key={order.id}
-                      className="border-t border-slate-800 hover:bg-slate-900/60"
-                    >
+                    <tr key={order.id} className="border-t border-slate-800 hover:bg-slate-900/60">
                       <td className="px-4 py-2 whitespace-nowrap text-xs text-slate-200">
                         {order.orderNumber}
                       </td>
@@ -415,9 +387,7 @@ export default function AdminOrdersPage() {
                         {order.productName}
                       </td>
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
-                        {order.piecesPerSheet != null
-                          ? `${order.piecesPerSheet}玉`
-                          : "-"}
+                        {order.piecesPerSheet != null ? `${order.piecesPerSheet}玉` : "-"}
                       </td>
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
                         {order.quantity}
@@ -429,33 +399,26 @@ export default function AdminOrdersPage() {
                         {order.agencyName ?? "-"}
                       </td>
 
-                      {/* 単価 */}
                       <td className="px-4 py-2 text-right text-xs text-slate-100">
                         <input
                           type="number"
                           className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                           value={order.unitPrice ?? ""}
-                          onChange={(e) =>
-                            handleUnitPriceChange(order.id, e.target.value)
-                          }
+                          onChange={(e) => handleUnitPriceChange(order.id, e.target.value)}
                           disabled={inputsDisabled}
                         />
                       </td>
 
-                      {/* 税率 */}
                       <td className="px-4 py-2 text-right text-xs text-slate-100">
                         <input
                           type="number"
                           className="w-16 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-right text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                           value={order.taxRate ?? ""}
-                          onChange={(e) =>
-                            handleTaxRateChange(order.id, e.target.value)
-                          }
+                          onChange={(e) => handleTaxRateChange(order.id, e.target.value)}
                           disabled={inputsDisabled}
                         />
                       </td>
 
-                      {/* 小計・税・合計 */}
                       <td className="px-4 py-2 text-right text-xs text-slate-100">
                         {formatCurrency(order.subtotal)}
                       </td>
@@ -466,33 +429,24 @@ export default function AdminOrdersPage() {
                         {formatCurrency(order.totalAmount)}
                       </td>
 
-                      {/* ステータス */}
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
                         <select
                           className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                           value={order.status}
-                          onChange={(e) =>
-                            handleStatusChange(order.id, e.target.value)
-                          }
+                          onChange={(e) => handleStatusChange(order.id, e.target.value)}
                           disabled={!statusSelectable}
                         >
                           {order.status === "pending" && (
-                            <option value="pending">
-                              {STATUS_LABELS["pending"]}
-                            </option>
+                            <option value="pending">{STATUS_LABELS.pending}</option>
                           )}
                           {order.status === "sent" && (
                             <>
-                              <option value="sent">{STATUS_LABELS["sent"]}</option>
-                              <option value="canceled">
-                                {STATUS_LABELS["canceled"]}
-                              </option>
+                              <option value="sent">{STATUS_LABELS.sent}</option>
+                              <option value="canceled">{STATUS_LABELS.canceled}</option>
                             </>
                           )}
                           {order.status === "canceled" && (
-                            <option value="canceled">
-                              {STATUS_LABELS["canceled"]}
-                            </option>
+                            <option value="canceled">{STATUS_LABELS.canceled}</option>
                           )}
                         </select>
                       </td>
@@ -506,9 +460,7 @@ export default function AdminOrdersPage() {
                           <button
                             onClick={() => handleSave(order)}
                             className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
-                            disabled={
-                              savingId === order.id || order.status === "canceled"
-                            }
+                            disabled={savingId === order.id || order.status === "canceled"}
                           >
                             保存
                           </button>
@@ -518,17 +470,13 @@ export default function AdminOrdersPage() {
                   );
                 })}
 
-                {(isAdmin ? filteredOrders : visibleOrders).length === 0 &&
-                  !loading && (
-                    <tr>
-                      <td
-                        colSpan={14}
-                        className="px-4 py-8 text-center text-xs text-slate-500"
-                      >
-                        条件に合致する注文はありません。
-                      </td>
-                    </tr>
-                  )}
+                {rows.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={14} className="px-4 py-8 text-center text-xs text-slate-500">
+                      条件に合致する注文はありません。
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
