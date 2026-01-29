@@ -43,14 +43,11 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "-";
-
-  // "YYYY-MM-DD" 形式ならそのまま表示（Date に変換すると時差でズレる可能性がある）
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
 
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "-";
 
-  // JSTで日付に寄せる
   const parts = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
@@ -104,10 +101,15 @@ export default function AdminOrdersPage() {
 
   const isAdmin = userRole === "admin";
 
+  // ★ canceled を画面から除外（要件）
   const visibleOrders = useMemo(() => {
-    if (isAdmin) return orders;
-    if (!email) return [];
-    return orders.filter((order) => order.createdByEmail === email);
+    const base = isAdmin
+      ? orders
+      : !email
+      ? []
+      : orders.filter((order) => order.createdByEmail === email);
+
+    return base.filter((o) => o.status !== "canceled");
   }, [orders, isAdmin, email]);
 
   // 代理店フィルタ候補（valueは agencyId、labelは agencyName）
@@ -180,7 +182,6 @@ export default function AdminOrdersPage() {
         const json = (await res.json()) as OrdersApiResponse;
         const mappedOrders = (json.orders ?? []).map((order) => ({
           ...order,
-          // 既存を優鼓しつつ、なければ agencyName を使う（あなたの現状仕様を維持）
           agencyId: order.agencyId ?? order.agencyName ?? null,
         }));
         setOrders(mappedOrders);
@@ -221,6 +222,7 @@ export default function AdminOrdersPage() {
 
       const json = (await res.json()) as PatchResponse;
 
+      // canceled はAPI側で delete → deletedId が返る
       if ("deletedId" in json) {
         setOrders((prev) => prev.filter((o) => o.id !== json.deletedId));
         return;
@@ -399,8 +401,10 @@ export default function AdminOrdersPage() {
 
               <tbody>
                 {rows.map((order) => {
-                  const statusSelectable = isAdmin && order.status === "sent";
-                  const inputsDisabled = !isAdmin || order.status === "canceled";
+                  // ★ 管理者は常にステータス変更可能（送信済み限定を撤廃）
+                  const statusSelectable = isAdmin;
+                  const inputsDisabled = !isAdmin; // canceled は画面に出さないので判定不要
+
                   return (
                     <tr
                       key={order.id}
@@ -456,25 +460,21 @@ export default function AdminOrdersPage() {
                       </td>
 
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
-                        <select
-                          className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-                          value={order.status}
-                          onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                          disabled={!statusSelectable}
-                        >
-                          {order.status === "pending" && (
+                        {isAdmin ? (
+                          <select
+                            className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                            value={order.status}
+                            onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                            disabled={!statusSelectable}
+                          >
                             <option value="pending">{STATUS_LABELS.pending}</option>
-                          )}
-                          {order.status === "sent" && (
-                            <>
-                              <option value="sent">{STATUS_LABELS.sent}</option>
-                              <option value="canceled">{STATUS_LABELS.canceled}</option>
-                            </>
-                          )}
-                          {order.status === "canceled" && (
+                            <option value="sent">{STATUS_LABELS.sent}</option>
+                            {/* ★ canceled を選んで保存すると API 側で delete → 一覧から消える */}
                             <option value="canceled">{STATUS_LABELS.canceled}</option>
-                          )}
-                        </select>
+                          </select>
+                        ) : (
+                          <span>{STATUS_LABELS[order.status]}</span>
+                        )}
                       </td>
 
                       <td className="px-4 py-2 text-center text-xs text-slate-400 whitespace-nowrap">
@@ -486,7 +486,7 @@ export default function AdminOrdersPage() {
                           <button
                             onClick={() => handleSave(order)}
                             className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
-                            disabled={savingId === order.id || order.status === "canceled"}
+                            disabled={savingId === order.id}
                           >
                             保存
                           </button>
