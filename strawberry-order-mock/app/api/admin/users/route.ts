@@ -4,18 +4,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-export const runtime = "nodejs";
-
-export const runtime = "nodejs";
-
-export const runtime = "nodejs";
-
-export const runtime = "nodejs";
-
-export const runtime = "nodejs";
-
-export const runtime = "nodejs";
-
 type Role = "admin" | "agency";
 
 type AgencyRow = {
