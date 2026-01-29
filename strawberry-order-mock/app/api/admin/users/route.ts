@@ -4,7 +4,21 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-type Agency = {
+export const runtime = "nodejs";
+
+export const runtime = "nodejs";
+
+export const runtime = "nodejs";
+
+export const runtime = "nodejs";
+
+export const runtime = "nodejs";
+
+export const runtime = "nodejs";
+
+type Role = "admin" | "agency";
+
+type AgencyRow = {
   id: string;
   name: string;
   code: string | null;
@@ -119,6 +133,11 @@ function generatePassword(length = 16) {
   return crypto.randomBytes(length).toString("base64url");
 }
 
+function generatePassword(length = 16) {
+  return crypto.randomBytes(length).toString("base64url");
+}
+
+// GET: 一覧取得
 export async function GET() {
   const client = ensureSupabase();
   if (!client) {
@@ -337,7 +356,14 @@ export async function PATCH(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as PatchBody;
 
-    if (!body.id) {
+    const { data: profile, error: profileError } = await client
+      .from("profiles")
+      .select("id, display_name, role, agency_id, email")
+      .eq("id", body.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error("[/api/admin/users PATCH] fetch profile error", profileError);
       return NextResponse.json(
         { error: "ユーザーIDが指定されていません。" },
         { status: 400 }
@@ -425,6 +451,35 @@ export async function PATCH(req: Request) {
           { error: "指定された代理店が存在しません。" },
           { status: 400 }
         );
+      }
+      updates.role = role;
+    }
+
+    if (agencyId !== undefined) {
+      if (agencyId) {
+        const { data: agency, error: agencyError } = await client
+          .from("agencies")
+          .select("id")
+          .eq("id", agencyId)
+          .maybeSingle();
+
+        if (agencyError) {
+          console.error("[/api/admin/users PUT] agency lookup error", agencyError);
+          return NextResponse.json(
+            { error: "代理店情報の確認に失敗しました。" },
+            { status: 500 }
+          );
+        }
+
+        if (!agency) {
+          return NextResponse.json(
+            { error: "指定された代理店が存在しません。" },
+            { status: 400 }
+          );
+        }
+        updates.agency_id = agencyId;
+      } else {
+        updates.agency_id = null;
       }
     }
 

@@ -100,6 +100,17 @@ export default function OrderPage() {
   const selectedProduct =
     products.find((p) => p.id === selectedProductId) ?? null;
 
+  // ログアウト処理
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("logout error", e);
+    } finally {
+      router.push("/login");
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -223,11 +234,21 @@ export default function OrderPage() {
             </Link>
           </div>
 
-          {message && (
-            <p className="mt-3 sm:mt-0 text-xs sm:text-sm text-emerald-100 bg-emerald-900/40 border border-emerald-700 rounded-md px-3 py-2 max-w-xs">
-              {message}
-            </p>
-          )}
+          <div className="mt-3 sm:mt-0 flex flex-col items-end gap-2">
+            {message && (
+              <p className="text-xs sm:text-sm text-emerald-100 bg-emerald-900/40 border border-emerald-700 rounded-md px-3 py-2 max-w-xs">
+                {message}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center justify-center rounded-md border border-red-500 bg-red-600/10 px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-red-500/20"
+            >
+              ログアウト
+            </button>
+          </div>
         </header>
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm">
