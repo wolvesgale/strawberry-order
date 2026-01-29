@@ -1,3 +1,4 @@
+// strawberry-order-mock/app/api/mock-orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { PRODUCTS } from "../mock-products/route";
@@ -31,14 +32,13 @@ export type MockOrder = {
 
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
-// 夏秋苺（税抜）価格マスタ：pieces_per_sheet -> unitPrice
 const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
   20: 1700,
   24: 1600,
   30: 1550,
   36: 1300,
 };
-const DEFAULT_TAX_RATE = 10; // 10%
+const DEFAULT_TAX_RATE = 10;
 
 function ensureSupabase() {
   if (!supabaseAdmin) {
@@ -50,7 +50,6 @@ function ensureSupabase() {
   return supabaseAdmin;
 }
 
-// 本日から 3 日後 0:00
 function getMinDeliveryDate(): Date {
   const d = new Date();
   d.setDate(d.getDate() + 3);
@@ -58,10 +57,6 @@ function getMinDeliveryDate(): Date {
   return d;
 }
 
-/**
- * 注文一覧取得
- * - ?agencyName=xxx が指定された場合は代理店名で絞り込み
- */
 export async function GET(req: NextRequest) {
   const client = ensureSupabase();
   if (!client) {
@@ -169,9 +164,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/**
- * 新規注文作成
- */
 export async function POST(request: NextRequest) {
   try {
     const client = ensureSupabase();
@@ -185,7 +177,6 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as any;
     console.log("[/api/mock-orders POST] body:", body);
 
-    // ===== productId（NOT NULL 制約用に必須） =====
     const productIdRaw = body.productId ?? body.product_id ?? null;
     const productId =
       typeof productIdRaw === "string" && productIdRaw.trim().length > 0
@@ -199,7 +190,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ===== 商品名 =====
     const rawProduct =
       body.productName ??
       body.product ??
@@ -226,7 +216,6 @@ export async function POST(request: NextRequest) {
       productName = "商品名未設定";
     }
 
-    // ===== そのほか入力値 =====
     const quantity = Number(body.quantity ?? 0);
     const piecesPerSheet = body.piecesPerSheet ?? body.pieces_per_sheet;
     const postalAndAddress = (
@@ -241,7 +230,6 @@ export async function POST(request: NextRequest) {
     const createdByEmail = body.createdByEmail ?? null;
     const agencyName = body.agencyName ?? body.agency_name ?? null;
 
-    // ===== バリデーション（フロントと同等） =====
     if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
         { error: "数量は 1 以上の偶数で入力してください。" },
@@ -257,10 +245,7 @@ export async function POST(request: NextRequest) {
     }
 
     const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
-    if (
-      !piecesPerSheet ||
-      !PIECES_PER_SHEET_OPTIONS.includes(Number(piecesPerSheet))
-    ) {
+    if (!piecesPerSheet || !PIECES_PER_SHEET_OPTIONS.includes(Number(piecesPerSheet))) {
       return NextResponse.json(
         { error: "1シートあたりの玉数を選択してください。" },
         { status: 400 }
@@ -312,7 +297,6 @@ export async function POST(request: NextRequest) {
       new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })
     );
 
-    // ===== 注文番号（ORD-YYYYMMDD-XXXX） =====
     const yyyy = now.getFullYear();
     const mm = String(now.getMonth() + 1).padStart(2, "0");
     const dd = String(now.getDate()).padStart(2, "0");
@@ -340,26 +324,20 @@ export async function POST(request: NextRequest) {
     const seq = (count ?? 0) + 1;
     const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
 
-    // ===== 金額：body > 夏秋苺価格マスタ > PRODUCTS の順に採用 =====
     let unitPrice: number | null =
       typeof body.unitPrice === "number" ? body.unitPrice : null;
     let taxRate: number | null =
       typeof body.taxRate === "number" ? body.taxRate : null;
 
-    const piecesNum =
-      piecesPerSheet != null ? Number(piecesPerSheet) : null;
+    const piecesNum = piecesPerSheet != null ? Number(piecesPerSheet) : null;
 
     if (unitPrice == null && piecesNum != null) {
       const candidate = NATSUAKI_STRAWBERRY_PRICES[piecesNum];
-      if (typeof candidate === "number") {
-        unitPrice = candidate;
-      }
+      if (typeof candidate === "number") unitPrice = candidate;
     }
 
     if (taxRate == null && piecesNum != null) {
-      if (NATSUAKI_STRAWBERRY_PRICES[piecesNum] != null) {
-        taxRate = DEFAULT_TAX_RATE;
-      }
+      if (NATSUAKI_STRAWBERRY_PRICES[piecesNum] != null) taxRate = DEFAULT_TAX_RATE;
     }
 
     if ((unitPrice == null || taxRate == null) && productId) {
@@ -370,8 +348,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const subtotal =
-      unitPrice != null ? unitPrice * quantity : null;
+    const subtotal = unitPrice != null ? unitPrice * quantity : null;
     const taxAmount =
       subtotal != null && taxRate != null
         ? Math.round(subtotal * (Number(taxRate) / 100))
@@ -379,7 +356,6 @@ export async function POST(request: NextRequest) {
     const totalAmount =
       subtotal != null && taxAmount != null ? subtotal + taxAmount : null;
 
-    // ===== Supabase に保存 =====
     const { data, error: insertError } = await client
       .from("orders")
       .insert({
@@ -464,13 +440,13 @@ export async function POST(request: NextRequest) {
       orderNumber: saved.orderNumber,
       mode: ORDER_MAIL_MODE,
     });
+
     const agencyLabel =
       saved.agencyName && saved.agencyName.trim().length > 0
         ? saved.agencyName.trim()
         : "代理店名未設定";
 
     const orderDateStr = now.toISOString().slice(0, 10);
-
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
     const mailLines: string[] = [];
@@ -499,19 +475,25 @@ export async function POST(request: NextRequest) {
     const bodyText = mailLines.join("\n");
 
     let messageId: string | null = null;
+
     if (ORDER_MAIL_MODE === "ses") {
       const { sendOrderEmail } = await import("@/lib/ses");
       try {
         messageId = await sendOrderEmail({ subject, bodyText });
+
+        // ★ 修正：MessageId が取れない（=設定不足で送信スキップ等）場合でも 500 にしない
+        // ここで 500 にすると、DB保存済みなのにユーザーが再送→重複注文の原因になる
         if (!messageId) {
-          console.error("[SES] Missing MessageId after send attempt.", {
+          console.warn("[SES] Email skipped or MessageId missing. Keep order as pending.", {
             orderNumber: saved.orderNumber,
           });
-          return NextResponse.json(
-            { error: "メール送信に失敗しました。" },
-            { status: 500 }
-          );
+          return NextResponse.json({
+            ok: true,
+            order: saved, // status: pending のまま
+            emailSent: false,
+          });
         }
+
         console.log("[SES] Order mail sent", {
           orderNumber: saved.orderNumber,
           messageId,
@@ -528,6 +510,7 @@ export async function POST(request: NextRequest) {
       messageId = "mock";
     }
 
+    // 送れた場合のみ sent に更新
     const emailSentAt = new Date().toISOString();
     const { data: sentData, error: sentError } = await client
       .from("orders")
@@ -594,7 +577,7 @@ export async function POST(request: NextRequest) {
       totalAmount: sentData.total_amount ?? totalAmount,
     };
 
-    return NextResponse.json({ ok: true, order: saved });
+    return NextResponse.json({ ok: true, order: saved, emailSent: true });
   } catch (error: any) {
     console.error("[/api/mock-orders POST] Unexpected error:", error);
     return NextResponse.json(
@@ -604,9 +587,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * ステータス更新用 PATCH（管理画面向け）
- */
 export async function PATCH(request: NextRequest) {
   try {
     const client = ensureSupabase();
@@ -662,15 +642,10 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ ok: true, deletedId: id });
     }
 
-    // 金額再計算（単価/税率が送られてきた場合）
     const updatePayload: any = { status };
 
-    if (typeof unitPrice === "number") {
-      updatePayload.unit_price = unitPrice;
-    }
-    if (typeof taxRate === "number") {
-      updatePayload.tax_rate = taxRate;
-    }
+    if (typeof unitPrice === "number") updatePayload.unit_price = unitPrice;
+    if (typeof taxRate === "number") updatePayload.tax_rate = taxRate;
 
     if (typeof unitPrice === "number" || typeof taxRate === "number") {
       const { data: current, error: fetchError } = await client
@@ -680,10 +655,7 @@ export async function PATCH(request: NextRequest) {
         .single();
 
       if (fetchError) {
-        console.error(
-          "[/api/mock-orders PATCH] fetch current order error:",
-          fetchError
-        );
+        console.error("[/api/mock-orders PATCH] fetch current order error:", fetchError);
       } else {
         const q = current.quantity as number;
         const u =
@@ -695,16 +667,13 @@ export async function PATCH(request: NextRequest) {
             ? taxRate
             : (current.tax_rate as number | null);
 
-        const subtotal =
-          u != null ? u * q : null;
+        const subtotal = u != null ? u * q : null;
         const taxAmount =
           subtotal != null && t != null
             ? Math.round(subtotal * (Number(t) / 100))
             : null;
         const totalAmount =
-          subtotal != null && taxAmount != null
-            ? subtotal + taxAmount
-            : null;
+          subtotal != null && taxAmount != null ? subtotal + taxAmount : null;
 
         updatePayload.subtotal = subtotal;
         updatePayload.tax_amount = taxAmount;
