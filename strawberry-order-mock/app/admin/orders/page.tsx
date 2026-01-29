@@ -25,7 +25,7 @@ type Order = {
   subtotal: number | null;
   taxAmount: number | null;
   totalAmount: number | null;
-  };
+};
 
 type OrdersApiResponse = {
   orders: Order[];
@@ -72,6 +72,7 @@ function formatCurrency(value: number | null): string {
   return value.toLocaleString("ja-JP");
 }
 
+// ※現状未使用だが既存コードのまま残す（影響最小化）
 function getMonthKey(dateStr: string | null): string | null {
   if (!dateStr) return null;
   const d = new Date(dateStr);
@@ -93,57 +94,44 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-const isAdmin = userRole === "admin";
-
-const visibleOrders = useMemo(() => {
-  if (isAdmin) return orders;
-  if (!email) return [];
-  return orders.filter((order) => order.createdByEmail === email);
-}, [orders, isAdmin, email]);
-
-const agencyOptions = useMemo(() => {
-  const ids = Array.from(
-    new Set(
-      visibleOrders
-        .map((o) => o.agencyId)
-        .filter((v): v is string => Boolean(v))
-    )
-  );
-  return ids;
-}, [visibleOrders]);
-
-const filteredOrders = useMemo(() => {
-  return visibleOrders.filter((order) => {
-    const matchesAgency =
-      !selectedAgency || selectedAgency === "" || order.agencyId === selectedAgency;
-
-    const targetDate = order.deliveryDate ?? order.createdAt;
-    const monthKey = String(targetDate).slice(0, 7);
-    const matchesMonth =
-      !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
-
-    return matchesAgency && matchesMonth;
-  });
-}, [visibleOrders, selectedAgency, selectedMonth]);
-
-
-      const targetDate = order.deliveryDate ?? order.createdAt;
-      const matchesMonth =
-        !selectedMonth || String(targetDate).slice(0, 7) === selectedMonth;
-
-      return matchesAgency && matchesMonth;
-    });
-  }, [visibleOrders, selectedAgency, selectedMonth]);
-
-      const targetDate = order.deliveryDate ?? order.createdAt;
-      const matchesMonth =
-        !selectedMonth || String(targetDate).slice(0, 7) === selectedMonth;
-
-      return matchesAgency && matchesMonth;
-    });
-  }, [visibleOrders, selectedAgency, selectedMonth]);
+  // ★ updateOrder 内で使われているのに state が無かったので追加（影響最小）
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const isAdmin = userRole === "admin";
+
+  const visibleOrders = useMemo(() => {
+    if (isAdmin) return orders;
+    if (!email) return [];
+    return orders.filter((order) => order.createdByEmail === email);
+  }, [orders, isAdmin, email]);
+
+  const agencyOptions = useMemo(() => {
+    const ids = Array.from(
+      new Set(
+        visibleOrders
+          .map((o) => o.agencyId)
+          .filter((v): v is string => Boolean(v))
+      )
+    );
+    return ids;
+  }, [visibleOrders]);
+
+  // ★ ここは “1つだけ” にする（残骸ブロックを完全削除）
+  const filteredOrders = useMemo(() => {
+    return visibleOrders.filter((order) => {
+      const matchesAgency =
+        !selectedAgency ||
+        selectedAgency === "" ||
+        order.agencyId === selectedAgency;
+
+      const targetDate = order.deliveryDate ?? order.createdAt;
+      const monthKey = String(targetDate).slice(0, 7);
+      const matchesMonth =
+        !selectedMonth || selectedMonth === "" || monthKey === selectedMonth;
+
+      return matchesAgency && matchesMonth;
+    });
+  }, [visibleOrders, selectedAgency, selectedMonth]);
 
   // 認証 & ロール取得
   useEffect(() => {
@@ -172,7 +160,6 @@ const filteredOrders = useMemo(() => {
         return;
       }
 
-      setEmail(user.email ?? null);
       setUserRole(profile?.role ?? null);
     }
 
@@ -188,10 +175,13 @@ const filteredOrders = useMemo(() => {
         const res = await fetch("/api/mock-orders", { cache: "no-store" });
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
         const json = (await res.json()) as OrdersApiResponse;
+
+        // 既存挙動を維持（agencyId が無い/不安定な場合の暫定マッピング）
         const mappedOrders = (json.orders ?? []).map((order) => ({
           ...order,
-          agencyId: order.agencyName ?? null,
+          agencyId: order.agencyId ?? (order.agencyName ?? null),
         }));
+
         setOrders(mappedOrders);
       } catch (e: any) {
         console.error(e);
@@ -232,9 +222,7 @@ const filteredOrders = useMemo(() => {
       }
 
       const updated: Order = json.order;
-      setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? updated : o))
-      );
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     } catch (e: any) {
       console.error(e);
       setError(e.message ?? "更新中にエラーが発生しました。");
@@ -318,8 +306,7 @@ const filteredOrders = useMemo(() => {
               代理店経由で登録された発注が一覧で表示されます。
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              ログインメール：{email ?? "未ログイン"}（ロール：
-              {userRole ?? "-"}）
+              ログインメール：{email ?? "未ログイン"}（ロール：{userRole ?? "-"}）
             </p>
           </div>
 
@@ -360,9 +347,7 @@ const filteredOrders = useMemo(() => {
             <h2 className="text-sm font-semibold text-slate-100">
               注文一覧（{isAdmin ? filteredOrders.length : visibleOrders.length}件）
             </h2>
-            {loading && (
-              <p className="text-xs text-slate-400">読み込み中...</p>
-            )}
+            {loading && <p className="text-xs text-slate-400">読み込み中...</p>}
           </div>
 
           {isAdmin && (
@@ -498,9 +483,7 @@ const filteredOrders = useMemo(() => {
                           )}
                           {order.status === "sent" && (
                             <>
-                              <option value="sent">
-                                {STATUS_LABELS["sent"]}
-                              </option>
+                              <option value="sent">{STATUS_LABELS["sent"]}</option>
                               <option value="canceled">
                                 {STATUS_LABELS["canceled"]}
                               </option>
@@ -517,6 +500,7 @@ const filteredOrders = useMemo(() => {
                       <td className="px-4 py-2 text-center text-xs text-slate-400 whitespace-nowrap">
                         {formatDateTime(order.createdAt)}
                       </td>
+
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
                         {isAdmin && (
                           <button
@@ -536,15 +520,15 @@ const filteredOrders = useMemo(() => {
 
                 {(isAdmin ? filteredOrders : visibleOrders).length === 0 &&
                   !loading && (
-                  <tr>
-                    <td
-                      colSpan={14}
-                      className="px-4 py-8 text-center text-xs text-slate-500"
-                    >
-                      条件に合致する注文はありません。
-                    </td>
-                  </tr>
-                )}
+                    <tr>
+                      <td
+                        colSpan={14}
+                        className="px-4 py-8 text-center text-xs text-slate-500"
+                      >
+                        条件に合致する注文はありません。
+                      </td>
+                    </tr>
+                  )}
               </tbody>
             </table>
           </div>
