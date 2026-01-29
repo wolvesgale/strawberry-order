@@ -25,6 +25,7 @@ type Order = {
   subtotal: number | null;
   taxAmount: number | null;
   totalAmount: number | null;
+  };
 
 type OrdersApiResponse = {
   orders: Order[];
