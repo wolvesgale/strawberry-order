@@ -4,7 +4,15 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-type Agency = {
+export const runtime = "nodejs";
+
+export const runtime = "nodejs";
+
+export const runtime = "nodejs";
+
+type Role = "admin" | "agency";
+
+type AgencyRow = {
   id: string;
   name: string;
   code: string | null;
@@ -119,6 +127,7 @@ function generatePassword(length = 16) {
   return crypto.randomBytes(length).toString("base64url");
 }
 
+// GET: 一覧取得
 export async function GET() {
   const client = ensureSupabase();
   if (!client) {
@@ -337,7 +346,8 @@ export async function PATCH(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as PatchBody;
 
-    if (!body.id) {
+    if (profileError) {
+      console.error("[/api/admin/users PATCH] fetch profile error", profileError);
       return NextResponse.json(
         { error: "ユーザーIDが指定されていません。" },
         { status: 400 }
@@ -426,6 +436,14 @@ export async function PATCH(req: Request) {
           { status: 400 }
         );
       }
+
+      if (!existingAgency) {
+        return NextResponse.json(
+          { error: "指定された代理店が存在しません。" },
+          { status: 400 }
+        );
+      }
+      updates.role = role;
     }
 
     const { error: updateError } = await client
