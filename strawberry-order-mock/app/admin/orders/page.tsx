@@ -122,6 +122,14 @@ export default function AdminOrdersPage() {
 
       return matchesAgency && matchesMonth;
     });
+  }, [visibleOrders, selectedAgency, selectedMonth]);
+
+      const targetDate = order.deliveryDate ?? order.createdAt;
+      const targetMonth = targetDate ? targetDate.slice(0, 7) : "";
+      const matchesMonth = selectedMonth ? targetMonth === selectedMonth : true;
+
+      return matchesAgency && matchesMonth;
+    });
   }, [orders, selectedAgency, selectedMonth]);
 
   const isAdmin = userRole === "admin";
@@ -181,72 +189,18 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, []);
 
-  // 代理店名一覧（フィルタ用）
-  const agencyOptions = useMemo(() => {
-    const names = Array.from(
-      new Set(
-        orders
-          .map((o) => o.agencyName)
-          .filter((name): name is string => Boolean(name))
-      )
-    );
-    names.sort((a, b) => a.localeCompare(b, "ja"));
-    return names;
-  }, [orders]);
-
-  // 月（YYYY-MM）一覧（配達日ベース）
-  const monthOptions = useMemo(() => {
-    const keys = Array.from(
-      new Set(
-        orders
-          .map((o) => getMonthKey(o.deliveryDate ?? o.createdAt))
-          .filter((k): k is string => Boolean(k))
-      )
-    );
-    keys.sort().reverse(); // 新しい月が先頭
-    return keys;
-  }, [orders]);
-
-  // フィルタ後の注文（ロール＆代理店＆月）
-  const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
-      // agency ユーザーは自分の注文だけ
-      if (userRole === "agency") {
-        if (!email || o.createdByEmail !== email) {
-          return false;
-        }
-      }
-
-      if (agencyFilter !== "all") {
-        if (!o.agencyName || o.agencyName !== agencyFilter) return false;
-      }
-      if (monthFilter !== "all") {
-        const key = getMonthKey(o.deliveryDate ?? o.createdAt);
-        if (key !== monthFilter) return false;
-      }
-      return true;
-    });
-  }, [orders, userRole, email, agencyFilter, monthFilter]);
-
-  async function handleStatusOrPriceSave(order: Order) {
-    // agency は編集不可（念のためガード）
-    if (!isAdmin) return;
-
+  async function updateOrder(
+    order: Order,
+    patch: { status?: OrderStatus; unitPrice?: number | null; taxRate?: number | null }
+  ) {
     setSavingId(order.id);
     setError(null);
 
     try {
       const res = await fetch("/api/mock-orders", {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: order.id,
-          status: order.status,
-          unitPrice: order.unitPrice,
-          taxRate: order.taxRate,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: order.id, ...patch }),
       });
 
       if (!res.ok) {
@@ -263,7 +217,9 @@ export default function AdminOrdersPage() {
       }
 
       const updated: Order = json.order;
-      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      setOrders((prev) =>
+        prev.map((o) => (o.id === order.id ? updated : o))
+      );
     } catch (e: any) {
       console.error(e);
       setError(e.message ?? "更新中にエラーが発生しました。");
@@ -322,21 +278,16 @@ export default function AdminOrdersPage() {
   }
 
   function handleSave(order: Order) {
-    updateOrder(order.id, {
+    updateOrder(order, {
       status: order.status,
       unitPrice: order.unitPrice ?? null,
       taxRate: order.taxRate ?? null,
     });
   }
 
-  if (!email && !error && loading) {
-    return (
-      <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
-        <div className="max-w-7xl mx-auto">
-          <p className="text-sm text-slate-400">認証情報を確認しています...</p>
-        </div>
-      </main>
-    );
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/login");
   }
 
   return (
