@@ -1,9 +1,25 @@
 // lib/ses.ts
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
-const REGION = process.env.AWS_REGION || "ap-northeast-1";
-const FROM = process.env.ORDER_FROM_EMAIL;
-const ORDER_TO = process.env.ORDER_TO_EMAIL;
+const REGION =
+  process.env.AWS_REGION ||
+  process.env.AWS_DEFAULT_REGION ||
+  "ap-northeast-1";
+
+// ★ 修正：Vercel 側のキー（SES_FROM_EMAIL）を優先しつつ後方互換も残す
+const FROM =
+  process.env.SES_FROM_EMAIL ||
+  process.env.ORDER_FROM_EMAIL ||
+  process.env.ORDER_FROM ||
+  process.env.SES_FROM ||
+  undefined;
+
+// 受信側（これはログ上すでに取れている）
+const ORDER_TO =
+  process.env.ORDER_TO_EMAIL ||
+  process.env.ORDER_TO ||
+  process.env.ORDER_TO_ADDRESS ||
+  undefined;
 
 const sesClient = new SESClient({
   region: REGION,
@@ -33,7 +49,6 @@ export async function sendOrderEmail({
 }: OrderEmailPayload): Promise<string | null> {
   const resolvedTo = to ?? ORDER_TO;
 
-  // デバッグ用ログ（CC 関連はもう使っていない）
   console.log("[SES] sendOrderEmail env", {
     REGION,
     FROM,
@@ -41,7 +56,7 @@ export async function sendOrderEmail({
     resolvedTo,
   });
 
-  if (!FROM || !REGION) {
+  if (!REGION || !FROM) {
     console.warn("[SES] Missing FROM or REGION. Skip sending email.");
     return null;
   }
@@ -53,35 +68,21 @@ export async function sendOrderEmail({
     return null;
   }
 
-  // もし cc が渡されても、現在は使用しない方針
   if (cc && cc.length > 0) {
-    console.warn(
-      "[SES] cc is provided but ignored in current configuration:",
-      cc
-    );
+    console.warn("[SES] cc is provided but ignored in current configuration:", cc);
   }
 
-  console.log("[SES] Sending email", {
-    subject,
-    to: resolvedTo,
-  });
+  console.log("[SES] Sending email", { subject, to: resolvedTo });
 
   const command = new SendEmailCommand({
     Source: FROM,
     Destination: {
       ToAddresses: [resolvedTo],
-      // ★ CC は一切指定しない
     },
     Message: {
-      Subject: {
-        Data: subject,
-        Charset: "UTF-8",
-      },
+      Subject: { Data: subject, Charset: "UTF-8" },
       Body: {
-        Text: {
-          Data: bodyText,
-          Charset: "UTF-8",
-        },
+        Text: { Data: bodyText, Charset: "UTF-8" },
       },
     },
   });
