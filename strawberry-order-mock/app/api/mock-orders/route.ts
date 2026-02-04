@@ -33,9 +33,9 @@ export type MockOrder = {
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
 const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
-  20: 1700,
-  24: 1600,
-  30: 1550,
+  20: 1296,
+  24: 1188,
+  30: 1080,
   36: 1300,
 };
 const DEFAULT_TAX_RATE = 10;
@@ -455,7 +455,7 @@ export async function POST(request: NextRequest) {
     mailLines.push(`注文番号：${saved.orderNumber}`);
     mailLines.push("");
     mailLines.push("【商品情報】");
-    mailLines.push(`いちごの種類：${saved.productName}`);
+    mailLines.push("いちごの種類：いちご");
     mailLines.push(`玉数/シート：${saved.piecesPerSheet ?? "-"}玉`);
     mailLines.push(`シート数：${saved.quantity}シート`);
     mailLines.push("");

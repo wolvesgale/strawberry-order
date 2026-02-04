@@ -86,6 +86,11 @@ function formatCurrency(value: number | null): string {
   return value.toLocaleString("ja-JP");
 }
 
+function formatShippingFee(quantity: number): string {
+  if (quantity <= 40) return "1,410";
+  return "個別見積";
+}
+
 export default function AdminOrdersPage() {
   const router = useRouter();
 
@@ -386,6 +391,7 @@ export default function AdminOrdersPage() {
                   <th className="px-4 py-2 text-left">商品</th>
                   <th className="px-4 py-2 text-center">玉数/シート</th>
                   <th className="px-4 py-2 text-center">セット数</th>
+                  <th className="px-4 py-2 text-right">送料</th>
                   <th className="px-4 py-2 text-center">到着希望日</th>
                   <th className="px-4 py-2 text-center">代理店</th>
                   <th className="px-4 py-2 text-right">単価</th>
@@ -421,6 +427,9 @@ export default function AdminOrdersPage() {
                       </td>
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
                         {order.quantity}
+                      </td>
+                      <td className="px-4 py-2 text-right text-xs text-slate-100">
+                        {formatShippingFee(order.quantity)}
                       </td>
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
                         {formatDate(order.deliveryDate)}
@@ -498,7 +507,7 @@ export default function AdminOrdersPage() {
 
                 {rows.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={14} className="px-4 py-8 text-center text-xs text-slate-500">
+                    <td colSpan={15} className="px-4 py-8 text-center text-xs text-slate-500">
                       条件に合致する注文はありません。
                     </td>
                   </tr>
