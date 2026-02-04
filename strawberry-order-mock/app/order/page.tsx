@@ -18,9 +18,9 @@ type MockProduct = {
 const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
 
 const NATSUAKI_PRICE_TABLE = [
-  { pieces: 20, price: 1700 },
-  { pieces: 24, price: 1600 },
-  { pieces: 30, price: 1550 },
+  { pieces: 20, price: 1296 },
+  { pieces: 24, price: 1188 },
+  { pieces: 30, price: 1080 },
   { pieces: 36, price: 1300 },
 ];
 
