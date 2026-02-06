@@ -91,6 +91,39 @@ function formatShippingFee(quantity: number): string {
   return "個別見積";
 }
 
+function calculateDisplayAmounts(order: Order): {
+  subtotal: number | null;
+  taxAmount: number | null;
+  totalAmount: number | null;
+} {
+  if (order.unitPrice == null) {
+    return {
+      subtotal: null,
+      taxAmount: null,
+      totalAmount: null,
+    };
+  }
+
+  const subtotal = order.unitPrice * order.quantity;
+  const taxRate = order.taxRate ?? 0;
+  const taxAmount = Math.round(subtotal * (taxRate / 100));
+  const totalAmount = subtotal + taxAmount;
+
+  if (
+    !Number.isFinite(subtotal) ||
+    !Number.isFinite(taxAmount) ||
+    !Number.isFinite(totalAmount)
+  ) {
+    return {
+      subtotal: order.subtotal,
+      taxAmount: order.taxAmount,
+      totalAmount: order.totalAmount,
+    };
+  }
+
+  return { subtotal, taxAmount, totalAmount };
+}
+
 export default function AdminOrdersPage() {
   const router = useRouter();
 
@@ -299,6 +332,19 @@ export default function AdminOrdersPage() {
   }
 
   const rows = isAdmin ? filteredOrders : visibleOrders;
+  const rowsForDisplay = useMemo(
+    () =>
+      rows.map((order) => {
+        const displayAmounts = calculateDisplayAmounts(order);
+        return {
+          ...order,
+          displaySubtotal: displayAmounts.subtotal,
+          displayTaxAmount: displayAmounts.taxAmount,
+          displayTotalAmount: displayAmounts.totalAmount,
+        };
+      }),
+    [rows]
+  );
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50 py-10 px-4">
@@ -406,7 +452,7 @@ export default function AdminOrdersPage() {
               </thead>
 
               <tbody>
-                {rows.map((order) => {
+                {rowsForDisplay.map((order) => {
                   // ★ 管理者は常にステータス変更可能（送信済み限定を撤廃）
                   const statusSelectable = isAdmin;
                   const inputsDisabled = !isAdmin; // canceled は画面に出さないので判定不要
@@ -459,13 +505,13 @@ export default function AdminOrdersPage() {
                       </td>
 
                       <td className="px-4 py-2 text-right text-xs text-slate-100">
-                        {formatCurrency(order.subtotal)}
+                        {formatCurrency(order.displaySubtotal)}
                       </td>
                       <td className="px-4 py-2 text-right text-xs text-slate-100">
-                        {formatCurrency(order.taxAmount)}
+                        {formatCurrency(order.displayTaxAmount)}
                       </td>
                       <td className="px-4 py-2 text-right text-emerald-100 font-semibold text-xs">
-                        {formatCurrency(order.totalAmount)}
+                        {formatCurrency(order.displayTotalAmount)}
                       </td>
 
                       <td className="px-4 py-2 text-center text-xs text-slate-100">
@@ -505,7 +551,7 @@ export default function AdminOrdersPage() {
                   );
                 })}
 
-                {rows.length === 0 && !loading && (
+                {rowsForDisplay.length === 0 && !loading && (
                   <tr>
                     <td colSpan={15} className="px-4 py-8 text-center text-xs text-slate-500">
                       条件に合致する注文はありません。
