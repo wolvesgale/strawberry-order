@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
 type Agency = {
   id: string;
@@ -36,9 +37,11 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [backfillMessage, setBackfillMessage] = useState<string | null>(null);
 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
 
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -169,6 +172,51 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function handleBackfill() {
+    setBackfilling(true);
+    setError(null);
+    setBackfillMessage(null);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error('認証情報の取得に失敗しました。再ログインしてください。');
+      }
+
+      const res = await fetch('/api/admin/backfill', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || 'バックフィルに失敗しました。');
+      }
+
+      const json = await res.json();
+      setBackfillMessage(
+        [
+          `profiles.email 更新: ${json.updatedProfilesCount ?? 0}件`,
+          `orders.user_id 更新: ${json.updatedOrdersUserIdCount ?? 0}件`,
+          `orders.agency_id 更新: ${json.updatedOrdersAgencyIdCount ?? 0}件`,
+          `単価バックフィル: ${json.updatedOrdersUnitPriceCount ?? 0}件`,
+          `スキップ: ${json.skippedCount ?? 0}件`,
+        ].join(' / ')
+      );
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'バックフィルに失敗しました。');
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-950">
       <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
@@ -191,11 +239,37 @@ export default function AdminUsersPage() {
           </p>
         )}
 
+        {backfillMessage && (
+          <p className="rounded-md border border-emerald-700 bg-emerald-900/40 px-3 py-2 text-sm text-emerald-100">
+            {backfillMessage}
+          </p>
+        )}
+
         {error && (
           <p className="rounded-md border border-red-700 bg-red-900/40 px-3 py-2 text-sm text-red-100">
             {error}
           </p>
         )}
+
+        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100">
+                代理店/ユーザー情報のバックフィル
+              </h2>
+              <p className="text-xs text-slate-400">
+                profiles.email と orders の user_id / agency_id を一括補完します。
+              </p>
+            </div>
+            <button
+              onClick={handleBackfill}
+              className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
+              disabled={backfilling}
+            >
+              {backfilling ? '実行中...' : 'バックフィル実行'}
+            </button>
+          </div>
+        </section>
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-2">
           <h2 className="text-sm font-semibold text-slate-100">新規ユーザー作成</h2>
