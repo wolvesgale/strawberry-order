@@ -47,6 +47,8 @@ export default function OrderPage() {
 
   // ログインメール表示用
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [agencyId, setAgencyId] = useState<string | null>(null);
+  const [agencyName, setAgencyName] = useState<string | null>(null);
 
   // UI状態
   const [submitting, setSubmitting] = useState(false);
@@ -73,6 +75,44 @@ export default function OrderPage() {
         return;
       }
       setSessionEmail(data.user.email ?? null);
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("agency_id")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("supabase profiles error", profileError);
+        return;
+      }
+
+      if (!profile?.agency_id) {
+        console.warn("agency_id is missing for current user");
+        setAgencyId(null);
+        setAgencyName(null);
+        return;
+      }
+
+      setAgencyId(profile.agency_id);
+
+      const { data: agency, error: agencyError } = await supabase
+        .from("agencies")
+        .select("name")
+        .eq("id", profile.agency_id)
+        .maybeSingle();
+
+      if (agencyError) {
+        console.error("supabase agencies error", agencyError);
+        return;
+      }
+
+      if (!agency?.name) {
+        console.warn("agency name not found for current user");
+        return;
+      }
+
+      setAgencyName(agency.name);
     }
     checkAuth();
   }, [router]);
@@ -183,6 +223,8 @@ export default function OrderPage() {
           deliveryDate,
           deliveryTimeNote,
           createdByEmail: sessionEmail,
+          agencyId,
+          agencyName,
         }),
       });
 

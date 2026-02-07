@@ -18,6 +18,7 @@ export type MockOrder = {
   phoneNumber: string;
   deliveryDate: string | null;
   deliveryTimeNote: string | null;
+  agencyId: string | null;
   agencyName: string | null;
   createdByEmail: string | null;
   status: OrderStatus;
@@ -85,6 +86,7 @@ export async function GET(req: NextRequest) {
         phone_number,
         delivery_date,
         delivery_time_note,
+        agency_id,
         agency_name,
         created_by_email,
         status,
@@ -142,6 +144,7 @@ export async function GET(req: NextRequest) {
         phoneNumber: r.phone_number ?? "",
         deliveryDate: r.delivery_date ?? null,
         deliveryTimeNote: r.delivery_time_note ?? null,
+        agencyId: r.agency_id ?? null,
         agencyName: r.agency_name ?? null,
         createdByEmail: r.created_by_email ?? null,
         status,
@@ -228,6 +231,7 @@ export async function POST(request: NextRequest) {
     const deliveryDate = body.deliveryDate ?? null;
     const deliveryTimeNote = body.deliveryTimeNote ?? null;
     const createdByEmail = body.createdByEmail ?? null;
+    const agencyId = body.agencyId ?? body.agency_id ?? null;
     const agencyName = body.agencyName ?? body.agency_name ?? null;
 
     if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
@@ -369,6 +373,7 @@ export async function POST(request: NextRequest) {
         phone_number: phoneNumber,
         delivery_date: deliveryDate,
         delivery_time_note: deliveryTimeNote,
+        agency_id: agencyId ?? null,
         agency_name: agencyName ?? null,
         created_by_email: createdByEmail ?? null,
         status: "pending",
@@ -391,6 +396,7 @@ export async function POST(request: NextRequest) {
         phone_number,
         delivery_date,
         delivery_time_note,
+        agency_id,
         agency_name,
         created_by_email,
         status,
@@ -424,6 +430,7 @@ export async function POST(request: NextRequest) {
       phoneNumber: data.phone_number ?? phoneNumber,
       deliveryDate: data.delivery_date ?? deliveryDate,
       deliveryTimeNote: data.delivery_time_note ?? deliveryTimeNote,
+      agencyId: data.agency_id ?? agencyId,
       agencyName: data.agency_name ?? agencyName,
       createdByEmail: data.created_by_email ?? createdByEmail,
       status: (data.status as OrderStatus) ?? "pending",
@@ -533,6 +540,7 @@ export async function POST(request: NextRequest) {
         phone_number,
         delivery_date,
         delivery_time_note,
+        agency_id,
         agency_name,
         created_by_email,
         status,
@@ -566,6 +574,7 @@ export async function POST(request: NextRequest) {
       phoneNumber: sentData.phone_number ?? phoneNumber,
       deliveryDate: sentData.delivery_date ?? deliveryDate,
       deliveryTimeNote: sentData.delivery_time_note ?? deliveryTimeNote,
+      agencyId: sentData.agency_id ?? agencyId,
       agencyName: sentData.agency_name ?? agencyName,
       createdByEmail: sentData.created_by_email ?? createdByEmail,
       status: (sentData.status as OrderStatus) ?? "sent",
@@ -698,6 +707,7 @@ export async function PATCH(request: NextRequest) {
         phone_number,
         delivery_date,
         delivery_time_note,
+        agency_id,
         agency_name,
         created_by_email,
         status,
@@ -731,6 +741,7 @@ export async function PATCH(request: NextRequest) {
       phoneNumber: data.phone_number ?? "",
       deliveryDate: data.delivery_date ?? null,
       deliveryTimeNote: data.delivery_time_note ?? null,
+      agencyId: data.agency_id ?? null,
       agencyName: data.agency_name ?? null,
       createdByEmail: data.created_by_email ?? null,
       status: (data.status as OrderStatus) ?? "pending",
