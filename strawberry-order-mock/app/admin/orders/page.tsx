@@ -124,6 +124,15 @@ function calculateDisplayAmounts(order: Order): {
   return { subtotal, taxAmount, totalAmount };
 }
 
+type SummaryRow = {
+  agencyId: string;
+  agencyName: string;
+  count: number;
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+};
+
 export default function AdminOrdersPage() {
   const router = useRouter();
 
@@ -175,6 +184,69 @@ export default function AdminOrdersPage() {
       return matchesAgency && matchesMonth;
     });
   }, [visibleOrders, selectedAgency, selectedMonth]);
+
+  const monthFilteredOrders = useMemo(() => {
+    if (!selectedMonth) return visibleOrders;
+    return visibleOrders.filter((order) => {
+      const targetDate = order.deliveryDate ?? order.createdAt;
+      const monthKey = String(targetDate).slice(0, 7);
+      return monthKey === selectedMonth;
+    });
+  }, [visibleOrders, selectedMonth]);
+
+  const monthlySummary = useMemo(() => {
+    const byAgency = new Map<string, SummaryRow>();
+    let totalCount = 0;
+    let totalSubtotal = 0;
+    let totalTaxAmount = 0;
+    let totalAmount = 0;
+
+    monthFilteredOrders.forEach((order) => {
+      const agencyId = order.agencyId ?? order.agencyName ?? "unassigned";
+      const agencyName = order.agencyName ?? "未設定";
+      const displayAmounts = calculateDisplayAmounts(order);
+      const subtotal = displayAmounts.subtotal ?? order.subtotal ?? 0;
+      const taxAmount = displayAmounts.taxAmount ?? order.taxAmount ?? 0;
+      const total = displayAmounts.totalAmount ?? order.totalAmount ?? 0;
+
+      totalCount += 1;
+      totalSubtotal += subtotal;
+      totalTaxAmount += taxAmount;
+      totalAmount += total;
+
+      const current =
+        byAgency.get(agencyId) ??
+        {
+          agencyId,
+          agencyName,
+          count: 0,
+          subtotal: 0,
+          taxAmount: 0,
+          totalAmount: 0,
+        };
+
+      current.count += 1;
+      current.subtotal += subtotal;
+      current.taxAmount += taxAmount;
+      current.totalAmount += total;
+      byAgency.set(agencyId, current);
+    });
+
+    const rows = Array.from(byAgency.values()).sort((a, b) =>
+      a.agencyName.localeCompare(b.agencyName, "ja-JP")
+    );
+
+    return {
+      monthLabel: selectedMonth || "全期間",
+      total: {
+        count: totalCount,
+        subtotal: totalSubtotal,
+        taxAmount: totalTaxAmount,
+        totalAmount,
+      },
+      byAgency: rows,
+    };
+  }, [monthFilteredOrders, selectedMonth]);
 
   // 認証 & ロール取得
   useEffect(() => {
@@ -429,6 +501,91 @@ export default function AdminOrdersPage() {
             </div>
           )}
 
+          {isAdmin && (
+            <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-sm font-semibold text-slate-100">
+                  月次集計（{monthlySummary.monthLabel}）
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  ※集計は月フィルタのみ反映（代理店フィルタは一覧のみ）
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-400">件数</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-100">
+                    {monthlySummary.total.count.toLocaleString("ja-JP")}件
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-400">小計(税抜)</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-100">
+                    {formatCurrency(monthlySummary.total.subtotal)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-400">消費税</p>
+                  <p className="mt-1 text-lg font-semibold text-slate-100">
+                    {formatCurrency(monthlySummary.total.taxAmount)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-400">合計(税込)</p>
+                  <p className="mt-1 text-lg font-semibold text-emerald-100">
+                    {formatCurrency(monthlySummary.total.totalAmount)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-900/70 text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left">代理店</th>
+                      <th className="px-3 py-2 text-right">件数</th>
+                      <th className="px-3 py-2 text-right">小計(税抜)</th>
+                      <th className="px-3 py-2 text-right">消費税</th>
+                      <th className="px-3 py-2 text-right">合計(税込)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlySummary.byAgency.map((row) => (
+                      <tr key={row.agencyId} className="border-t border-slate-800">
+                        <td className="px-3 py-2 text-slate-100">
+                          {row.agencyName}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-200">
+                          {row.count.toLocaleString("ja-JP")}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-200">
+                          {formatCurrency(row.subtotal)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-200">
+                          {formatCurrency(row.taxAmount)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-emerald-100">
+                          {formatCurrency(row.totalAmount)}
+                        </td>
+                      </tr>
+                    ))}
+                    {monthlySummary.byAgency.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="px-3 py-4 text-center text-[11px] text-slate-500"
+                        >
+                          対象月の注文がありません。
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60">
             <table className="min-w-full text-sm">
               <thead className="bg-slate-900/80 border-b border-slate-800">
@@ -481,7 +638,7 @@ export default function AdminOrdersPage() {
                         {formatDate(order.deliveryDate)}
                       </td>
                       <td className="px-4 py-2 text-xs text-slate-100">
-                        {order.agencyName ?? "-"}
+                        {order.agencyName ?? "未設定"}
                       </td>
 
                       <td className="px-4 py-2 text-right text-xs text-slate-100">
