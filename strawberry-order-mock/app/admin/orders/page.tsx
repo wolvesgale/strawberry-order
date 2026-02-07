@@ -163,16 +163,17 @@ export default function AdminOrdersPage() {
   const agencyOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const o of visibleOrders) {
-      const id = o.agencyId ?? o.agencyName ?? "";
+      const id = o.agencyId ?? o.agencyName ?? "unassigned";
+      const label = o.agencyName ?? (id === "unassigned" ? "未設定" : id);
       if (!id) continue;
-      map.set(id, o.agencyName ?? id);
+      map.set(id, label);
     }
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [visibleOrders]);
 
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
-      const agencyKey = order.agencyId ?? order.agencyName ?? "";
+      const agencyKey = order.agencyId ?? order.agencyName ?? "unassigned";
       const matchesAgency =
         !selectedAgency || selectedAgency === "" || agencyKey === selectedAgency;
 
@@ -185,15 +186,6 @@ export default function AdminOrdersPage() {
     });
   }, [visibleOrders, selectedAgency, selectedMonth]);
 
-  const monthFilteredOrders = useMemo(() => {
-    if (!selectedMonth) return visibleOrders;
-    return visibleOrders.filter((order) => {
-      const targetDate = order.deliveryDate ?? order.createdAt;
-      const monthKey = String(targetDate).slice(0, 7);
-      return monthKey === selectedMonth;
-    });
-  }, [visibleOrders, selectedMonth]);
-
   const monthlySummary = useMemo(() => {
     const byAgency = new Map<string, SummaryRow>();
     let totalCount = 0;
@@ -201,7 +193,7 @@ export default function AdminOrdersPage() {
     let totalTaxAmount = 0;
     let totalAmount = 0;
 
-    monthFilteredOrders.forEach((order) => {
+    filteredOrders.forEach((order) => {
       const agencyId = order.agencyId ?? order.agencyName ?? "unassigned";
       const agencyName = order.agencyName ?? "未設定";
       const displayAmounts = calculateDisplayAmounts(order);
@@ -246,7 +238,7 @@ export default function AdminOrdersPage() {
       },
       byAgency: rows,
     };
-  }, [monthFilteredOrders, selectedMonth]);
+  }, [filteredOrders, selectedMonth]);
 
   // 認証 & ロール取得
   useEffect(() => {
@@ -508,7 +500,7 @@ export default function AdminOrdersPage() {
                   月次集計（{monthlySummary.monthLabel}）
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  ※集計は月フィルタのみ反映（代理店フィルタは一覧のみ）
+                  ※集計は月フィルタ・代理店フィルタの両方が反映されます
                 </p>
               </div>
 

@@ -51,6 +51,108 @@ function ensureSupabase() {
   return supabaseAdmin;
 }
 
+async function resolveAgencyLookups(
+  client: NonNullable<ReturnType<typeof ensureSupabase>>,
+  rows: any[]
+): Promise<{
+  agencyNameById: Map<string, string>;
+  agencyIdByEmail: Map<string, string>;
+}> {
+  const agencyNameById = new Map<string, string>();
+  const agencyIdByEmail = new Map<string, string>();
+
+  const emails = Array.from(
+    new Set(
+      rows
+        .filter((row) => !row.agency_id && !row.agency_name && row.created_by_email)
+        .map((row) => row.created_by_email)
+    )
+  );
+
+  const agencyIds = new Set<string>();
+  rows.forEach((row) => {
+    if (row.agency_id) agencyIds.add(row.agency_id);
+  });
+
+  if (emails.length > 0) {
+    const { data: profiles, error: profilesError } = await client
+      .from("profiles")
+      .select("email, agency_id")
+      .in("email", emails);
+
+    if (profilesError) {
+      console.error("[/api/mock-orders] profiles lookup error", profilesError);
+    } else {
+      (profiles ?? []).forEach((profile: any) => {
+        if (profile.email && profile.agency_id) {
+          agencyIdByEmail.set(profile.email, profile.agency_id);
+          agencyIds.add(profile.agency_id);
+        }
+      });
+    }
+  }
+
+  if (agencyIds.size > 0) {
+    const { data: agencies, error: agenciesError } = await client
+      .from("agencies")
+      .select("id, name")
+      .in("id", Array.from(agencyIds));
+
+    if (agenciesError) {
+      console.error("[/api/mock-orders] agencies lookup error", agenciesError);
+    } else {
+      (agencies ?? []).forEach((agency: any) => {
+        if (agency.id && agency.name) {
+          agencyNameById.set(agency.id, agency.name);
+        }
+      });
+    }
+  }
+
+  return { agencyNameById, agencyIdByEmail };
+}
+
+async function resolveAgencySnapshot(
+  client: NonNullable<ReturnType<typeof ensureSupabase>>,
+  createdByEmail: string | null,
+  agencyId: string | null,
+  agencyName: string | null
+): Promise<{ agencyId: string | null; agencyName: string | null }> {
+  if (agencyId || agencyName || !createdByEmail) {
+    return { agencyId, agencyName };
+  }
+
+  const { data: profile, error: profileError } = await client
+    .from("profiles")
+    .select("agency_id")
+    .eq("email", createdByEmail)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("[/api/mock-orders POST] profiles lookup error", profileError);
+    return { agencyId, agencyName };
+  }
+
+  if (!profile?.agency_id) {
+    return { agencyId, agencyName };
+  }
+
+  const { data: agency, error: agencyError } = await client
+    .from("agencies")
+    .select("name")
+    .eq("id", profile.agency_id)
+    .maybeSingle();
+
+  if (agencyError) {
+    console.error("[/api/mock-orders POST] agencies lookup error", agencyError);
+  }
+
+  return {
+    agencyId: profile.agency_id ?? agencyId,
+    agencyName: agency?.name ?? agencyName,
+  };
+}
+
 function getMinDeliveryDate(): Date {
   const d = new Date();
   d.setDate(d.getDate() + 3);
@@ -100,10 +202,6 @@ export async function GET(req: NextRequest) {
       )
       .order("created_at", { ascending: false });
 
-    if (agencyName) {
-      query = query.eq("agency_name", agencyName);
-    }
-
     const { data, error } = await query;
 
     if (error) {
@@ -115,8 +213,21 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = (data ?? []) as any[];
+    const { agencyNameById, agencyIdByEmail } = await resolveAgencyLookups(
+      client,
+      rows
+    );
 
     const orders: MockOrder[] = rows.map((r) => {
+      const resolvedAgencyId =
+        r.agency_id ??
+        (r.created_by_email ? agencyIdByEmail.get(r.created_by_email) : null) ??
+        null;
+      const resolvedAgencyName =
+        r.agency_name ??
+        (resolvedAgencyId ? agencyNameById.get(resolvedAgencyId) : null) ??
+        null;
+
       const unitPriceFromMaster =
         r.pieces_per_sheet != null
           ? NATSUAKI_STRAWBERRY_PRICES[r.pieces_per_sheet as number]
@@ -144,8 +255,8 @@ export async function GET(req: NextRequest) {
         phoneNumber: r.phone_number ?? "",
         deliveryDate: r.delivery_date ?? null,
         deliveryTimeNote: r.delivery_time_note ?? null,
-        agencyId: r.agency_id ?? null,
-        agencyName: r.agency_name ?? null,
+        agencyId: resolvedAgencyId,
+        agencyName: resolvedAgencyName,
         createdByEmail: r.created_by_email ?? null,
         status,
         createdAt: r.created_at ?? new Date().toISOString(),
@@ -157,7 +268,11 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ orders });
+    const filteredOrders = agencyName
+      ? orders.filter((order) => order.agencyName === agencyName)
+      : orders;
+
+    return NextResponse.json({ orders: filteredOrders });
   } catch (error: any) {
     console.error("[/api/mock-orders GET] Unexpected error:", error);
     return NextResponse.json(
@@ -231,8 +346,15 @@ export async function POST(request: NextRequest) {
     const deliveryDate = body.deliveryDate ?? null;
     const deliveryTimeNote = body.deliveryTimeNote ?? null;
     const createdByEmail = body.createdByEmail ?? null;
-    const agencyId = body.agencyId ?? body.agency_id ?? null;
-    const agencyName = body.agencyName ?? body.agency_name ?? null;
+    let agencyId = body.agencyId ?? body.agency_id ?? null;
+    let agencyName = body.agencyName ?? body.agency_name ?? null;
+
+    ({ agencyId, agencyName } = await resolveAgencySnapshot(
+      client,
+      createdByEmail,
+      agencyId,
+      agencyName
+    ));
 
     if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
