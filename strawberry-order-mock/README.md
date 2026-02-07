@@ -56,3 +56,9 @@ populate `orders.agency_id` / `orders.agency_name` from `profiles.email`.
 ```sql
 -- supabase/backfill_agency.sql
 ```
+
+### Agency profile columns
+
+If your Supabase project does not yet have `profiles.email`, `profiles.agency_id`,
+or `profiles.agency_name` (and the `agencies` table), apply the latest migration in
+`supabase/migrations/` to add them as nullable fields for backward compatibility.
