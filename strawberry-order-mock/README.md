@@ -47,3 +47,12 @@ when AWS SES should be used.
 
 Apply the SQL migration in `supabase/migrations/` to add `email_sent_at` and
 `email_message_id`, and to normalize legacy `shipped` statuses to `sent`.
+
+### Agency backfill (existing orders)
+
+If existing orders are missing agency information, run the SQL script below once to
+populate `orders.agency_id` / `orders.agency_name` from `profiles.email`.
+
+```sql
+-- supabase/backfill_agency.sql
+```
