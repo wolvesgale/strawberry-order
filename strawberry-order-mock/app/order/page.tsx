@@ -78,7 +78,7 @@ export default function OrderPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("agency_id")
+        .select("agency_id, agency_name")
         .eq("id", data.user.id)
         .maybeSingle();
 
@@ -90,11 +90,14 @@ export default function OrderPage() {
       if (!profile?.agency_id) {
         console.warn("agency_id is missing for current user");
         setAgencyId(null);
-        setAgencyName(null);
+        setAgencyName(profile?.agency_name ?? null);
         return;
       }
 
       setAgencyId(profile.agency_id);
+      if (profile.agency_name) {
+        setAgencyName(profile.agency_name);
+      }
 
       const { data: agency, error: agencyError } = await supabase
         .from("agencies")

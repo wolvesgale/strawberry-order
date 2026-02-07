@@ -80,7 +80,7 @@ export default function AgencyOrdersPage() {
       // profiles から agency_id を取得
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("agency_id")
+        .select("agency_id, agency_name")
         .eq("id", data.user.id)
         .maybeSingle();
 
@@ -91,9 +91,13 @@ export default function AgencyOrdersPage() {
       }
 
       if (!profile?.agency_id) {
-        setError(
-          "代理店情報が設定されていません。管理者にお問い合わせください。"
-        );
+        if (profile?.agency_name) {
+          setAgencyName(profile.agency_name);
+        } else {
+          setError(
+            "代理店情報が設定されていません。管理者にお問い合わせください。"
+          );
+        }
         return;
       }
 
@@ -115,7 +119,7 @@ export default function AgencyOrdersPage() {
         return;
       }
 
-      setAgencyName(agency.name);
+      setAgencyName(agency.name ?? profile.agency_name ?? null);
     }
 
     loadProfile();

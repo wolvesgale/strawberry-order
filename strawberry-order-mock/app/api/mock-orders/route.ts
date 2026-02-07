@@ -57,9 +57,11 @@ async function resolveAgencyLookups(
 ): Promise<{
   agencyNameById: Map<string, string>;
   agencyIdByEmail: Map<string, string>;
+  agencyNameByEmail: Map<string, string>;
 }> {
   const agencyNameById = new Map<string, string>();
   const agencyIdByEmail = new Map<string, string>();
+  const agencyNameByEmail = new Map<string, string>();
 
   const emails = Array.from(
     new Set(
@@ -77,16 +79,24 @@ async function resolveAgencyLookups(
   if (emails.length > 0) {
     const { data: profiles, error: profilesError } = await client
       .from("profiles")
-      .select("email, agency_id")
+      .select("email, agency_id, agency_name")
       .in("email", emails);
 
     if (profilesError) {
       console.error("[/api/mock-orders] profiles lookup error", profilesError);
     } else {
       (profiles ?? []).forEach((profile: any) => {
-        if (profile.email && profile.agency_id) {
-          agencyIdByEmail.set(profile.email, profile.agency_id);
-          agencyIds.add(profile.agency_id);
+        if (profile.email) {
+          if (profile.agency_id) {
+            agencyIdByEmail.set(profile.email, profile.agency_id);
+            agencyIds.add(profile.agency_id);
+            if (profile.agency_name) {
+              agencyNameById.set(profile.agency_id, profile.agency_name);
+            }
+          }
+          if (profile.agency_name) {
+            agencyNameByEmail.set(profile.email, profile.agency_name);
+          }
         }
       });
     }
@@ -109,7 +119,7 @@ async function resolveAgencyLookups(
     }
   }
 
-  return { agencyNameById, agencyIdByEmail };
+  return { agencyNameById, agencyIdByEmail, agencyNameByEmail };
 }
 
 async function resolveAgencySnapshot(
@@ -124,7 +134,7 @@ async function resolveAgencySnapshot(
 
   const { data: profile, error: profileError } = await client
     .from("profiles")
-    .select("agency_id")
+    .select("agency_id, agency_name")
     .eq("email", createdByEmail)
     .maybeSingle();
 
@@ -134,7 +144,7 @@ async function resolveAgencySnapshot(
   }
 
   if (!profile?.agency_id) {
-    return { agencyId, agencyName };
+    return { agencyId, agencyName: profile?.agency_name ?? agencyName };
   }
 
   const { data: agency, error: agencyError } = await client
@@ -149,7 +159,7 @@ async function resolveAgencySnapshot(
 
   return {
     agencyId: profile.agency_id ?? agencyId,
-    agencyName: agency?.name ?? agencyName,
+    agencyName: agency?.name ?? profile?.agency_name ?? agencyName,
   };
 }
 
@@ -213,10 +223,8 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = (data ?? []) as any[];
-    const { agencyNameById, agencyIdByEmail } = await resolveAgencyLookups(
-      client,
-      rows
-    );
+    const { agencyNameById, agencyIdByEmail, agencyNameByEmail } =
+      await resolveAgencyLookups(client, rows);
 
     const orders: MockOrder[] = rows.map((r) => {
       const resolvedAgencyId =
@@ -226,6 +234,7 @@ export async function GET(req: NextRequest) {
       const resolvedAgencyName =
         r.agency_name ??
         (resolvedAgencyId ? agencyNameById.get(resolvedAgencyId) : null) ??
+        (r.created_by_email ? agencyNameByEmail.get(r.created_by_email) : null) ??
         null;
 
       const unitPriceFromMaster =
