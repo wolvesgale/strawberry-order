@@ -130,36 +130,47 @@ async function resolveAgencyLookups(
   return { agencyNameById, agencyIdByEmail, agencyNameByEmail };
 }
 
-async function resolveAgencySnapshot(
+async function resolveOrderActorSnapshot(
   client: NonNullable<ReturnType<typeof ensureSupabase>>,
   createdByEmail: string | null,
   agencyId: string | null,
   agencyName: string | null
-): Promise<{ agencyId: string | null; agencyName: string | null }> {
+): Promise<{
+  userId: string | null;
+  agencyId: string | null;
+  agencyName: string | null;
+}> {
   const normalizedEmail = normalizeEmail(createdByEmail);
-  if (agencyId || agencyName || !normalizedEmail) {
-    return { agencyId, agencyName };
+  if (!normalizedEmail) {
+    return { userId: null, agencyId, agencyName };
   }
 
   const { data: profile, error: profileError } = await client
     .from("profiles")
-    .select("agency_id, agency_name")
+    .select("id, agency_id, agency_name")
     .eq("email", normalizedEmail)
     .maybeSingle();
 
   if (profileError) {
     console.error("[/api/mock-orders POST] profiles lookup error", profileError);
-    return { agencyId, agencyName };
+    return { userId: null, agencyId, agencyName };
   }
 
-  if (!profile?.agency_id) {
-    return { agencyId, agencyName: profile?.agency_name ?? agencyName };
+  const resolvedUserId = profile?.id ?? null;
+  const resolvedAgencyId = agencyId ?? profile?.agency_id ?? null;
+
+  if (!resolvedAgencyId) {
+    return {
+      userId: resolvedUserId,
+      agencyId,
+      agencyName: profile?.agency_name ?? agencyName,
+    };
   }
 
   const { data: agency, error: agencyError } = await client
     .from("agencies")
     .select("name")
-    .eq("id", profile.agency_id)
+    .eq("id", resolvedAgencyId)
     .maybeSingle();
 
   if (agencyError) {
@@ -167,7 +178,8 @@ async function resolveAgencySnapshot(
   }
 
   return {
-    agencyId: profile.agency_id ?? agencyId,
+    userId: resolvedUserId,
+    agencyId: resolvedAgencyId,
     agencyName: agency?.name ?? profile?.agency_name ?? agencyName,
   };
 }
@@ -242,8 +254,8 @@ export async function GET(req: NextRequest) {
         (normalizedEmail ? agencyIdByEmail.get(normalizedEmail) : null) ??
         null;
       const resolvedAgencyName =
-        r.agency_name ??
         (resolvedAgencyId ? agencyNameById.get(resolvedAgencyId) : null) ??
+        r.agency_name ??
         (normalizedEmail ? agencyNameByEmail.get(normalizedEmail) : null) ??
         null;
 
@@ -362,13 +374,17 @@ export async function POST(request: NextRequest) {
     const createdByEmail = body.createdByEmail ?? null;
     let agencyId = body.agencyId ?? body.agency_id ?? null;
     let agencyName = body.agencyName ?? body.agency_name ?? null;
+    let userId: string | null = body.userId ?? body.user_id ?? null;
 
-    ({ agencyId, agencyName } = await resolveAgencySnapshot(
+    const resolvedActor = await resolveOrderActorSnapshot(
       client,
       createdByEmail,
       agencyId,
       agencyName
-    ));
+    );
+    agencyId = resolvedActor.agencyId;
+    agencyName = resolvedActor.agencyName;
+    userId = userId ?? resolvedActor.userId ?? null;
 
     if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
@@ -509,6 +525,7 @@ export async function POST(request: NextRequest) {
         phone_number: phoneNumber,
         delivery_date: deliveryDate,
         delivery_time_note: deliveryTimeNote,
+        user_id: userId ?? null,
         agency_id: agencyId ?? null,
         agency_name: agencyName ?? null,
         created_by_email: createdByEmail ?? null,
