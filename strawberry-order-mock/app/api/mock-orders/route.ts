@@ -41,6 +41,12 @@ const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
 };
 const DEFAULT_TAX_RATE = 10;
 
+function normalizeEmail(email: string | null | undefined): string | null {
+  if (!email) return null;
+  const normalized = email.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function ensureSupabase() {
   if (!supabaseAdmin) {
     console.error(
@@ -67,7 +73,8 @@ async function resolveAgencyLookups(
     new Set(
       rows
         .filter((row) => !row.agency_id && !row.agency_name && row.created_by_email)
-        .map((row) => row.created_by_email)
+        .map((row) => normalizeEmail(row.created_by_email))
+        .filter((email): email is string => Boolean(email))
     )
   );
 
@@ -86,16 +93,17 @@ async function resolveAgencyLookups(
       console.error("[/api/mock-orders] profiles lookup error", profilesError);
     } else {
       (profiles ?? []).forEach((profile: any) => {
-        if (profile.email) {
+        const normalizedEmail = normalizeEmail(profile.email);
+        if (normalizedEmail) {
           if (profile.agency_id) {
-            agencyIdByEmail.set(profile.email, profile.agency_id);
+            agencyIdByEmail.set(normalizedEmail, profile.agency_id);
             agencyIds.add(profile.agency_id);
             if (profile.agency_name) {
               agencyNameById.set(profile.agency_id, profile.agency_name);
             }
           }
           if (profile.agency_name) {
-            agencyNameByEmail.set(profile.email, profile.agency_name);
+            agencyNameByEmail.set(normalizedEmail, profile.agency_name);
           }
         }
       });
@@ -128,14 +136,15 @@ async function resolveAgencySnapshot(
   agencyId: string | null,
   agencyName: string | null
 ): Promise<{ agencyId: string | null; agencyName: string | null }> {
-  if (agencyId || agencyName || !createdByEmail) {
+  const normalizedEmail = normalizeEmail(createdByEmail);
+  if (agencyId || agencyName || !normalizedEmail) {
     return { agencyId, agencyName };
   }
 
   const { data: profile, error: profileError } = await client
     .from("profiles")
     .select("agency_id, agency_name")
-    .eq("email", createdByEmail)
+    .eq("email", normalizedEmail)
     .maybeSingle();
 
   if (profileError) {
@@ -227,23 +236,19 @@ export async function GET(req: NextRequest) {
       await resolveAgencyLookups(client, rows);
 
     const orders: MockOrder[] = rows.map((r) => {
+      const normalizedEmail = normalizeEmail(r.created_by_email);
       const resolvedAgencyId =
         r.agency_id ??
-        (r.created_by_email ? agencyIdByEmail.get(r.created_by_email) : null) ??
+        (normalizedEmail ? agencyIdByEmail.get(normalizedEmail) : null) ??
         null;
       const resolvedAgencyName =
         r.agency_name ??
         (resolvedAgencyId ? agencyNameById.get(resolvedAgencyId) : null) ??
-        (r.created_by_email ? agencyNameByEmail.get(r.created_by_email) : null) ??
+        (normalizedEmail ? agencyNameByEmail.get(normalizedEmail) : null) ??
         null;
 
-      const unitPriceFromMaster =
-        r.pieces_per_sheet != null
-          ? NATSUAKI_STRAWBERRY_PRICES[r.pieces_per_sheet as number]
-          : undefined;
-
-      const unitPrice = r.unit_price ?? unitPriceFromMaster ?? null;
-      const taxRate = r.tax_rate ?? DEFAULT_TAX_RATE;
+      const unitPrice = r.unit_price ?? null;
+      const taxRate = r.tax_rate ?? null;
       const rawStatus = r.status as string | null;
       const status: OrderStatus =
         rawStatus === "shipped"

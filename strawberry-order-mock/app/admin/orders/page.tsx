@@ -86,6 +86,12 @@ function formatCurrency(value: number | null): string {
   return value.toLocaleString("ja-JP");
 }
 
+function normalizeEmail(email: string | null): string | null {
+  if (!email) return null;
+  const normalized = email.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function formatShippingFee(quantity: number): string {
   if (quantity <= 40) return "1,410";
   return "個別見積";
@@ -147,17 +153,20 @@ export default function AdminOrdersPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const isAdmin = userRole === "admin";
+  const normalizedEmail = useMemo(() => normalizeEmail(email), [email]);
 
   // ★ canceled を画面から除外（要件）
   const visibleOrders = useMemo(() => {
     const base = isAdmin
       ? orders
-      : !email
+      : !normalizedEmail
       ? []
-      : orders.filter((order) => order.createdByEmail === email);
+      : orders.filter(
+          (order) => normalizeEmail(order.createdByEmail) === normalizedEmail
+        );
 
     return base.filter((o) => o.status !== "canceled");
-  }, [orders, isAdmin, email]);
+  }, [orders, isAdmin, normalizedEmail]);
 
   // 代理店フィルタ候補（valueは agencyId、labelは agencyName）
   const agencyOptions = useMemo(() => {
