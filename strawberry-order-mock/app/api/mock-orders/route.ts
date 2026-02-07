@@ -57,6 +57,33 @@ function ensureSupabase() {
   return supabaseAdmin;
 }
 
+async function fetchEffectivePrice(
+  client: NonNullable<ReturnType<typeof ensureSupabase>>,
+  productName: string,
+  effectiveAt: string
+): Promise<{ unitPrice: number; taxRate: number } | null> {
+  const { data, error } = await client
+    .from("product_prices")
+    .select("unit_price, tax_rate")
+    .eq("product_name", productName)
+    .lte("effective_from", effectiveAt)
+    .order("effective_from", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("[/api/mock-orders] product_prices lookup error", error);
+    return null;
+  }
+
+  const row = data?.[0];
+  if (!row) return null;
+
+  return {
+    unitPrice: Number(row.unit_price),
+    taxRate: Number(row.tax_rate),
+  };
+}
+
 async function resolveAgencyLookups(
   client: NonNullable<ReturnType<typeof ensureSupabase>>,
   rows: any[]
@@ -203,6 +230,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const agencyName = searchParams.get("agencyName");
+    const agencyId = searchParams.get("agencyId");
 
     let query = client
       .from("orders")
@@ -294,7 +322,9 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const filteredOrders = agencyName
+    const filteredOrders = agencyId
+      ? orders.filter((order) => order.agencyId === agencyId)
+      : agencyName
       ? orders.filter((order) => order.agencyName === agencyName)
       : orders;
 
@@ -486,6 +516,14 @@ export async function POST(request: NextRequest) {
       typeof body.taxRate === "number" ? body.taxRate : null;
 
     const piecesNum = piecesPerSheet != null ? Number(piecesPerSheet) : null;
+
+    if (productName && (unitPrice == null || taxRate == null)) {
+      const price = await fetchEffectivePrice(client, productName, now.toISOString());
+      if (price) {
+        if (unitPrice == null) unitPrice = price.unitPrice;
+        if (taxRate == null) taxRate = price.taxRate;
+      }
+    }
 
     if (unitPrice == null && piecesNum != null) {
       const candidate = NATSUAKI_STRAWBERRY_PRICES[piecesNum];

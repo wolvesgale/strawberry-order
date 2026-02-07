@@ -172,9 +172,10 @@ export default function AdminOrdersPage() {
   const agencyOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const o of visibleOrders) {
-      const id = o.agencyId ?? o.agencyName ?? "unassigned";
-      const label = o.agencyName ?? (id === "unassigned" ? "未設定" : id);
-      if (!id) continue;
+      const id = o.agencyId ?? "unassigned";
+      const label = o.agencyId
+        ? o.agencyName ?? o.agencyId
+        : "未設定";
       map.set(id, label);
     }
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
@@ -182,7 +183,7 @@ export default function AdminOrdersPage() {
 
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
-      const agencyKey = order.agencyId ?? order.agencyName ?? "unassigned";
+      const agencyKey = order.agencyId ?? "unassigned";
       const matchesAgency =
         !selectedAgency || selectedAgency === "" || agencyKey === selectedAgency;
 
@@ -203,8 +204,8 @@ export default function AdminOrdersPage() {
     let totalAmount = 0;
 
     filteredOrders.forEach((order) => {
-      const agencyId = order.agencyId ?? order.agencyName ?? "unassigned";
-      const agencyName = order.agencyName ?? "未設定";
+      const agencyId = order.agencyId ?? "unassigned";
+      const agencyName = order.agencyId ? order.agencyName ?? order.agencyId : "未設定";
       const displayAmounts = calculateDisplayAmounts(order);
       const subtotal = displayAmounts.subtotal ?? order.subtotal ?? 0;
       const taxAmount = displayAmounts.taxAmount ?? order.taxAmount ?? 0;
@@ -639,7 +640,7 @@ export default function AdminOrdersPage() {
                         {formatDate(order.deliveryDate)}
                       </td>
                       <td className="px-4 py-2 text-xs text-slate-100">
-                        {order.agencyName ?? "未設定"}
+                        {order.agencyId ? order.agencyName ?? "代理店名未設定" : "未設定"}
                       </td>
 
                       <td className="px-4 py-2 text-right text-xs text-slate-100">

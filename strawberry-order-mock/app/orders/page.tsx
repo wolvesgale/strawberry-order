@@ -59,6 +59,7 @@ export default function AgencyOrdersPage() {
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
   const [agencyName, setAgencyName] = useState<string | null>(null);
+  const [agencyId, setAgencyId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +102,8 @@ export default function AgencyOrdersPage() {
         return;
       }
 
+      setAgencyId(profile.agency_id ?? null);
+
       // agencies から代理店名を取得
       const { data: agency, error: agencyError } = await supabase
         .from("agencies")
@@ -127,17 +130,16 @@ export default function AgencyOrdersPage() {
 
   // 自分の代理店分の注文だけ取得
   useEffect(() => {
-    if (!agencyName) return;
+    if (!agencyId) return;
 
     async function fetchOrders() {
       setLoading(true);
       setError(null);
       try {
-        const encodedAgencyName = encodeURIComponent(agencyName ?? "");
-        const res = await fetch(
-          `/api/mock-orders?agencyName=${encodedAgencyName}`,
-          { cache: "no-store" }
-        );
+        const encodedAgencyId = encodeURIComponent(agencyId ?? "");
+        const res = await fetch(`/api/mock-orders?agencyId=${encodedAgencyId}`, {
+          cache: "no-store",
+        });
         if (!res.ok) throw new Error("注文一覧の取得に失敗しました。");
         const json = (await res.json()) as OrdersApiResponse;
         setOrders(json.orders ?? []);
@@ -150,7 +152,7 @@ export default function AgencyOrdersPage() {
     }
 
     fetchOrders();
-  }, [agencyName]);
+  }, [agencyId]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
