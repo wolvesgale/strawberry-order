@@ -36,6 +36,7 @@ type PostBody = {
   role?: "admin" | "agency";
   agencyId?: string | null;
   newAgencyName?: string | null;
+  password?: string | null;
 };
 
 type PutBody = {
@@ -44,6 +45,7 @@ type PutBody = {
   name?: string;
   role?: "admin" | "agency";
   agencyId?: string | null;
+  password?: string | null;
 };
 
 type PatchBody = {
@@ -188,6 +190,7 @@ export async function POST(req: Request) {
     const role = body.role;
     const agencyId = body.agencyId ?? null;
     const newAgencyName = body.newAgencyName?.trim() ?? null;
+    const specifiedPassword = body.password?.trim() ?? null;
 
     if (!displayName || !email || !role) {
       return NextResponse.json(
@@ -257,7 +260,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const password = generatePassword();
+    const password = specifiedPassword || generatePassword();
     const { data: authCreated, error: authError } = await client.auth.admin.createUser({
       email,
       password,
@@ -325,6 +328,7 @@ export async function PUT(req: Request) {
     const displayName = (body.name ?? body.displayName)?.trim();
     const role = body.role;
     const agencyId = body.agencyId;
+    const password = body.password?.trim() || null;
 
     if (!id) {
       return NextResponse.json({ error: "ユーザーIDが指定されていません。" }, { status: 400 });
@@ -364,14 +368,24 @@ export async function PUT(req: Request) {
       }
     }
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0 && !password) {
       return NextResponse.json({ error: "更新する項目が指定されていません。" }, { status: 400 });
     }
 
-    const { error: updateError } = await client.from("profiles").update(updates).eq("id", id);
-    if (updateError) {
-      console.error("[/api/admin/users PUT] update profile error", updateError);
-      return NextResponse.json({ error: "ユーザー情報の更新に失敗しました。" }, { status: 500 });
+    if (Object.keys(updates).length > 0) {
+      const { error: updateError } = await client.from("profiles").update(updates).eq("id", id);
+      if (updateError) {
+        console.error("[/api/admin/users PUT] update profile error", updateError);
+        return NextResponse.json({ error: "ユーザー情報の更新に失敗しました。" }, { status: 500 });
+      }
+    }
+
+    if (password) {
+      const { error: authUpdateError } = await client.auth.admin.updateUserById(id, { password });
+      if (authUpdateError) {
+        console.error("[/api/admin/users PUT] auth password update error", authUpdateError);
+        return NextResponse.json({ error: "パスワードの更新に失敗しました。" }, { status: 500 });
+      }
     }
 
     const [{ data: profile }, { data: agencies }] = await Promise.all([
