@@ -29,6 +29,7 @@ type CreatePayload = {
   role: 'admin' | 'agency';
   agencyId: string | null;
   newAgencyName: string | null;
+  password?: string | null;
 };
 
 export default function AdminUsersPage() {
@@ -48,6 +49,8 @@ export default function AdminUsersPage() {
   const [newRole, setNewRole] = useState<'admin' | 'agency'>('agency');
   const [newAgencyId, setNewAgencyId] = useState<string>('');
   const [newAgencyName, setNewAgencyName] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [changingPasswordForId, setChangingPasswordForId] = useState<string | null>(null);
 
   const agencyOptions = useMemo(() => agencies, [agencies]);
 
@@ -100,6 +103,7 @@ export default function AdminUsersPage() {
       setNewRole('agency');
       setNewAgencyId('');
       setNewAgencyName('');
+      setNewPassword('');
     } catch (e: any) {
       console.error(e);
       setError(e.message || '作成に失敗しました。');
@@ -169,6 +173,32 @@ export default function AdminUsersPage() {
       setError(e.message || '削除に失敗しました。');
     } finally {
       setSavingId(null);
+    }
+  }
+
+  async function handlePasswordChange(userId: string, password: string) {
+    setChangingPasswordForId(userId);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userId, password }),
+      });
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || 'パスワードの変更に失敗しました。');
+      }
+
+      setMessage('パスワードを変更しました。');
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || 'パスワードの変更に失敗しました。');
+    } finally {
+      setChangingPasswordForId(null);
     }
   }
 
@@ -283,6 +313,7 @@ export default function AdminUsersPage() {
                 role: newRole,
                 agencyId: newAgencyId || null,
                 newAgencyName: newAgencyName.trim() || null,
+                password: newPassword.trim() || null,
               });
             }}
           >
@@ -343,6 +374,20 @@ export default function AdminUsersPage() {
                 代理店ユーザーの場合、所属代理店か新しい代理店名を入力してください。
               </p>
             </label>
+            <label className="text-xs text-slate-200 space-y-1">
+              <span className="block">初期パスワード（任意）</span>
+              <input
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                placeholder="空欄の場合は自動生成"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                type="text"
+                autoComplete="off"
+              />
+              <p className="text-[10px] text-slate-400">
+                未入力の場合はシステムがランダムなパスワードを生成します。
+              </p>
+            </label>
             <div className="sm:col-span-2 lg:col-span-4 flex items-end justify-end">
               <button
                 type="submit"
@@ -383,7 +428,9 @@ export default function AdminUsersPage() {
                       agencies={agencyOptions}
                       onUpdate={handleUpdate}
                       onDelete={handleDelete}
+                      onPasswordChange={handlePasswordChange}
                       saving={savingId === u.id}
+                      changingPassword={changingPasswordForId === u.id}
                     />
                   ))}
                 </tbody>
@@ -401,19 +448,25 @@ function UserRow({
   agencies,
   onUpdate,
   onDelete,
+  onPasswordChange,
   saving,
+  changingPassword,
 }: {
   user: AdminUser;
   agencies: Agency[];
   onUpdate: (user: AdminUser) => Promise<void>;
   onDelete: (userId: string) => Promise<void>;
+  onPasswordChange: (userId: string, password: string) => Promise<void>;
   saving: boolean;
+  changingPassword: boolean;
 }) {
   const [selectedAgencyId, setSelectedAgencyId] = useState<string>(
     user.agencyId ?? '',
   );
   const [name, setName] = useState(user.name);
   const [role, setRole] = useState<'admin' | 'agency'>(user.role);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [rowPassword, setRowPassword] = useState('');
 
   useEffect(() => {
     setSelectedAgencyId(user.agencyId ?? '');
@@ -430,64 +483,119 @@ function UserRow({
     });
   }
 
+  async function handlePasswordSubmit() {
+    if (!rowPassword.trim()) return;
+    await onPasswordChange(user.id, rowPassword.trim());
+    setRowPassword('');
+    setShowPasswordForm(false);
+  }
+
   return (
-    <tr className="border-t border-slate-800">
-      <td className="px-3 py-2">
-        <input
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </td>
-      <td className="px-3 py-2 text-slate-200">
-        <input
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 outline-none"
-          value={user.email ?? '-'}
-          readOnly
-        />
-      </td>
-      <td className="px-3 py-2">
-        <select
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-          value={role}
-          onChange={(e) => setRole(e.target.value as 'admin' | 'agency')}
-        >
-          <option value="admin">admin</option>
-          <option value="agency">agency</option>
-        </select>
-      </td>
-      <td className="px-3 py-2">
-        <select
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-          value={selectedAgencyId}
-          onChange={(e) => setSelectedAgencyId(e.target.value)}
-        >
-          <option value="">(未設定)</option>
-          {agencies.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td className="px-3 py-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
-        >
-          {saving ? '保存中...' : '保存'}
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(user.id)}
-          disabled={saving}
-          className="ml-2 inline-flex items-center rounded-md border border-red-500 px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-red-500/10 disabled:opacity-60"
-        >
-          削除
-        </button>
-      </td>
-    </tr>
+    <>
+      <tr className="border-t border-slate-800">
+        <td className="px-3 py-2">
+          <input
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </td>
+        <td className="px-3 py-2 text-slate-200">
+          <input
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 outline-none"
+            value={user.email ?? '-'}
+            readOnly
+          />
+        </td>
+        <td className="px-3 py-2">
+          <select
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+            value={role}
+            onChange={(e) => setRole(e.target.value as 'admin' | 'agency')}
+          >
+            <option value="admin">admin</option>
+            <option value="agency">agency</option>
+          </select>
+        </td>
+        <td className="px-3 py-2">
+          <select
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+            value={selectedAgencyId}
+            onChange={(e) => setSelectedAgencyId(e.target.value)}
+          >
+            <option value="">(未設定)</option>
+            {agencies.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || changingPassword}
+              className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+            >
+              {saving ? '保存中...' : '保存'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowPasswordForm((v) => !v);
+                setRowPassword('');
+              }}
+              disabled={saving || changingPassword}
+              className="inline-flex items-center rounded-md border border-amber-500 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-60"
+            >
+              PW変更
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(user.id)}
+              disabled={saving || changingPassword}
+              className="inline-flex items-center rounded-md border border-red-500 px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-red-500/10 disabled:opacity-60"
+            >
+              削除
+            </button>
+          </div>
+        </td>
+      </tr>
+      {showPasswordForm && (
+        <tr className="border-t border-slate-700 bg-slate-800/40">
+          <td colSpan={5} className="px-3 py-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-300 whitespace-nowrap">新しいパスワード:</span>
+              <input
+                className="flex-1 min-w-40 rounded-md border border-amber-600/50 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                type="text"
+                autoComplete="off"
+                value={rowPassword}
+                onChange={(e) => setRowPassword(e.target.value)}
+                placeholder="新しいパスワードを入力"
+              />
+              <button
+                type="button"
+                onClick={handlePasswordSubmit}
+                disabled={changingPassword || !rowPassword.trim()}
+                className="inline-flex items-center rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-60"
+              >
+                {changingPassword ? '変更中...' : '変更する'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowPasswordForm(false); setRowPassword(''); }}
+                disabled={changingPassword}
+                className="inline-flex items-center rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 disabled:opacity-60"
+              >
+                キャンセル
+              </button>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
