@@ -127,6 +127,7 @@ export default function AdminUsersPage() {
         body: JSON.stringify({
           id: user.id,
           name: user.name,
+          email: user.email ?? null,
           role: user.role,
           agencyId: user.agencyId ?? null,
         }),
@@ -464,6 +465,7 @@ function UserRow({
     user.agencyId ?? '',
   );
   const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email ?? '');
   const [role, setRole] = useState<'admin' | 'agency'>(user.role);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [rowPassword, setRowPassword] = useState('');
@@ -471,6 +473,7 @@ function UserRow({
   useEffect(() => {
     setSelectedAgencyId(user.agencyId ?? '');
     setName(user.name);
+    setEmail(user.email ?? '');
     setRole(user.role);
   }, [user]);
 
@@ -478,6 +481,7 @@ function UserRow({
     await onUpdate({
       ...user,
       name,
+      email: email.trim() || null,
       role,
       agencyId: selectedAgencyId || null,
     });
@@ -500,11 +504,12 @@ function UserRow({
             onChange={(e) => setName(e.target.value)}
           />
         </td>
-        <td className="px-3 py-2 text-slate-200">
+        <td className="px-3 py-2">
           <input
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-200 outline-none"
-            value={user.email ?? '-'}
-            readOnly
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
         </td>
         <td className="px-3 py-2">
