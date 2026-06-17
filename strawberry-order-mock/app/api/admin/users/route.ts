@@ -43,6 +43,7 @@ type PutBody = {
   id?: string;
   displayName?: string;
   name?: string;
+  email?: string | null;
   role?: "admin" | "agency";
   agencyId?: string | null;
   password?: string | null;
@@ -326,6 +327,7 @@ export async function PUT(req: Request) {
     const body = (await req.json().catch(() => ({}))) as PutBody;
     const id = body.id?.trim();
     const displayName = (body.name ?? body.displayName)?.trim();
+    const email = body.email?.trim() || null;
     const role = body.role;
     const agencyId = body.agencyId;
     const password = body.password?.trim() || null;
@@ -368,6 +370,10 @@ export async function PUT(req: Request) {
       }
     }
 
+    if (email) {
+      updates.email = email;
+    }
+
     if (Object.keys(updates).length === 0 && !password) {
       return NextResponse.json({ error: "更新する項目が指定されていません。" }, { status: 400 });
     }
@@ -380,11 +386,19 @@ export async function PUT(req: Request) {
       }
     }
 
-    if (password) {
-      const { error: authUpdateError } = await client.auth.admin.updateUserById(id, { password });
+    if (email || password) {
+      const authUpdates: { email?: string; email_confirm?: boolean; password?: string } = {};
+      if (email) {
+        authUpdates.email = email;
+        authUpdates.email_confirm = true;
+      }
+      if (password) {
+        authUpdates.password = password;
+      }
+      const { error: authUpdateError } = await client.auth.admin.updateUserById(id, authUpdates);
       if (authUpdateError) {
-        console.error("[/api/admin/users PUT] auth password update error", authUpdateError);
-        return NextResponse.json({ error: "パスワードの更新に失敗しました。" }, { status: 500 });
+        console.error("[/api/admin/users PUT] auth update error", authUpdateError);
+        return NextResponse.json({ error: "認証情報の更新に失敗しました。" }, { status: 500 });
       }
     }
 
