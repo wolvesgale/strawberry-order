@@ -430,7 +430,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
+    const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
     if (!piecesPerSheet || !PIECES_PER_SHEET_OPTIONS.includes(Number(piecesPerSheet))) {
       return NextResponse.json(
         { error: "1シートあたりの玉数を選択してください。" },
