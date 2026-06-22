@@ -20,7 +20,7 @@ export async function GET() {
   try {
     const { data, error } = await client
       .from("product_prices")
-      .select("id, product_name, unit_price, tax_rate, effective_from, created_at")
+      .select("id, product_name, pieces_per_sheet, unit_price, tax_rate, effective_from, effective_to, created_at")
       .order("effective_from", { ascending: false });
 
     if (error) {
@@ -43,11 +43,13 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { productName, unitPrice, taxRate, effectiveFrom } = body as {
+    const { productName, piecesPerSheet, unitPrice, taxRate, effectiveFrom, effectiveTo } = body as {
       productName?: string;
+      piecesPerSheet?: number | string | null;
       unitPrice?: number | string;
       taxRate?: number | string;
       effectiveFrom?: string;
+      effectiveTo?: string | null;
     };
 
     if (!productName?.trim() || !unitPrice || !effectiveFrom?.trim()) {
@@ -59,6 +61,7 @@ export async function POST(req: Request) {
 
     const parsedUnitPrice = Number(unitPrice);
     const parsedTaxRate = Number(taxRate ?? 8);
+    const parsedPiecesPerSheet = piecesPerSheet ? Number(piecesPerSheet) : null;
 
     if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice <= 0) {
       return NextResponse.json({ error: "単価は正の数値で入力してください。" }, { status: 400 });
@@ -68,11 +71,13 @@ export async function POST(req: Request) {
       .from("product_prices")
       .insert({
         product_name: productName.trim(),
+        pieces_per_sheet: parsedPiecesPerSheet,
         unit_price: parsedUnitPrice,
         tax_rate: parsedTaxRate,
         effective_from: effectiveFrom.trim(),
+        effective_to: effectiveTo?.trim() || null,
       })
-      .select("id, product_name, unit_price, tax_rate, effective_from, created_at")
+      .select("id, product_name, pieces_per_sheet, unit_price, tax_rate, effective_from, effective_to, created_at")
       .maybeSingle();
 
     if (error) {
