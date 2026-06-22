@@ -15,7 +15,7 @@ type MockProduct = {
   taxRate: number;
 };
 
-const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
+const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
 
 const NATSUAKI_PRICE_TABLE = [
   { pieces: 20, price: 1296 },
@@ -164,13 +164,8 @@ export default function OrderPage() {
       return;
     }
 
-    if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
-      setError("数量は 1 以上の偶数で入力してください。");
-      return;
-    }
-
-    if (selectedProduct?.season === "winter" && quantity % 4 !== 0) {
-      setError("冬いちごは 4 の倍数で発注してください。");
+    if (!quantity || quantity < 4 || quantity % 4 !== 0) {
+      setError("数量は 4 シート以上の 4 の倍数で入力してください。");
       return;
     }
 
@@ -320,9 +315,6 @@ export default function OrderPage() {
               </tbody>
             </table>
           </div>
-          <p className="mt-2 text-xs font-semibold text-red-300">
-            36玉は現在販売休止中のため、発注フォームでは選択できません。
-          </p>
         </section>
 
         {/* フォーム本体 */}
@@ -365,7 +357,7 @@ export default function OrderPage() {
               ))}
             </select>
             <p className="text-xs text-slate-500">
-              30玉 / 24玉 / 20玉 から選択します。
+              36玉 / 30玉 / 24玉 / 20玉 から選択します。
             </p>
           </div>
 
@@ -376,14 +368,14 @@ export default function OrderPage() {
             </label>
             <input
               type="number"
-              min={2}
-              step={2}
+              min={4}
+              step={4}
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
             />
             <p className="text-xs text-slate-500">
-              2シート以上の偶数で入力してください。冬いちごは 4 の倍数になります。
+              4シート以上、4の倍数で入力してください。
             </p>
           </div>
 
