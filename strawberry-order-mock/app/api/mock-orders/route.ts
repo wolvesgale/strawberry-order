@@ -34,12 +34,12 @@ export type MockOrder = {
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
 const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
-  20: 1296,
-  24: 1188,
-  30: 1080,
+  20: 1700,
+  24: 1650,
+  30: 1550,
   36: 1300,
 };
-const DEFAULT_TAX_RATE = 10;
+const DEFAULT_TAX_RATE = 8;
 
 function normalizeEmail(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -60,15 +60,24 @@ function ensureSupabase() {
 async function fetchEffectivePrice(
   client: NonNullable<ReturnType<typeof ensureSupabase>>,
   productName: string,
-  effectiveAt: string
+  effectiveAt: string,
+  piecesPerSheet?: number | null
 ): Promise<{ unitPrice: number; taxRate: number } | null> {
-  const { data, error } = await client
+  const today = effectiveAt.slice(0, 10);
+  let query = client
     .from("product_prices")
     .select("unit_price, tax_rate")
     .eq("product_name", productName)
-    .lte("effective_from", effectiveAt)
+    .lte("effective_from", today)
+    .or(`effective_to.is.null,effective_to.gte.${today}`)
     .order("effective_from", { ascending: false })
     .limit(1);
+
+  if (piecesPerSheet != null) {
+    query = query.eq("pieces_per_sheet", piecesPerSheet);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[/api/mock-orders] product_prices lookup error", error);
@@ -518,7 +527,7 @@ export async function POST(request: NextRequest) {
     const piecesNum = piecesPerSheet != null ? Number(piecesPerSheet) : null;
 
     if (productName && (unitPrice == null || taxRate == null)) {
-      const price = await fetchEffectivePrice(client, productName, now.toISOString());
+      const price = await fetchEffectivePrice(client, productName, now.toISOString(), piecesNum);
       if (price) {
         if (unitPrice == null) unitPrice = price.unitPrice;
         if (taxRate == null) taxRate = price.taxRate;
