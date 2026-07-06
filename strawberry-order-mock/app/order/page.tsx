@@ -251,6 +251,7 @@ export default function OrderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId: selectedProductId,
+          productName: selectedProduct?.name ?? "",
           quantity,
           piecesPerSheet,
           postalAndAddress,
