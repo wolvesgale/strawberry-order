@@ -146,6 +146,7 @@ export default function AdminOrdersPage() {
   const [userRole, setUserRole] = useState<"admin" | "agency" | null>(null);
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [allAgencies, setAllAgencies] = useState<{ id: string; name: string }[]>([]);
   const [selectedAgency, setSelectedAgency] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -168,18 +169,24 @@ export default function AdminOrdersPage() {
     return base.filter((o) => o.status !== "canceled");
   }, [orders, isAdmin, normalizedEmail]);
 
-  // 代理店フィルタ候補（valueは agencyId、labelは agencyName）
+  // 代理店フィルタ候補：DBの全代理店 + 注文にある未紐付け代理店も補完
   const agencyOptions = useMemo(() => {
     const map = new Map<string, string>();
+    // DBから取得した全代理店を先に入れる
+    for (const a of allAgencies) {
+      map.set(a.id, a.name);
+    }
+    // 注文に含まれる代理店（DBにない可能性があるもの）を補完
     for (const o of visibleOrders) {
       const id = o.agencyId ?? "unassigned";
-      const label = o.agencyId
-        ? o.agencyName ?? o.agencyId
-        : "未設定";
-      map.set(id, label);
+      if (!map.has(id)) {
+        map.set(id, o.agencyId ? (o.agencyName ?? o.agencyId) : "未設定");
+      }
     }
-    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
-  }, [visibleOrders]);
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "ja"));
+  }, [allAgencies, visibleOrders]);
 
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
@@ -306,6 +313,16 @@ export default function AdminOrdersPage() {
     }
 
     fetchOrders();
+  }, []);
+
+  // 代理店一覧をDBから取得
+  useEffect(() => {
+    fetch("/api/admin/agencies")
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (json?.agencies) setAllAgencies(json.agencies);
+      })
+      .catch(() => {});
   }, []);
 
   async function updateOrder(

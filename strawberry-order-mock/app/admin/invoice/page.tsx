@@ -107,7 +107,7 @@ function InvoiceContent() {
 
     for (const o of orders) {
       const price = o.unitPrice ?? 0;
-      const rate = o.taxRate ?? DEFAULT_PRODUCT_TAX_RATE;
+      const rate = DEFAULT_PRODUCT_TAX_RATE;
       const sub = price * o.quantity;
       productSubtotal += sub;
       productTax += Math.round(sub * rate / 100);
@@ -200,7 +200,7 @@ function InvoiceContent() {
             <tbody>
               {orders.map((o, i) => {
                 const price = o.unitPrice ?? 0;
-                const rate = o.taxRate ?? DEFAULT_PRODUCT_TAX_RATE;
+                const rate = DEFAULT_PRODUCT_TAX_RATE;
                 const sub = price * o.quantity;
                 const hasStdShipping = o.quantity <= 40;
                 return (
