@@ -97,6 +97,8 @@ function formatShippingFee(quantity: number): string {
   return "個別見積";
 }
 
+const PRODUCT_TAX_RATE = 8; // 農産物（いちご）は常に軽減税率8%
+
 function calculateDisplayAmounts(order: Order): {
   subtotal: number | null;
   taxAmount: number | null;
@@ -111,8 +113,7 @@ function calculateDisplayAmounts(order: Order): {
   }
 
   const subtotal = order.unitPrice * order.quantity;
-  const taxRate = order.taxRate ?? 0;
-  const taxAmount = Math.round(subtotal * (taxRate / 100));
+  const taxAmount = Math.round(subtotal * (PRODUCT_TAX_RATE / 100));
   const totalAmount = subtotal + taxAmount;
 
   if (
