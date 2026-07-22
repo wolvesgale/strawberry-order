@@ -427,7 +427,7 @@ export async function POST(request: NextRequest) {
 
     if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
-        { error: "数量は 1 以上の偶数で入力してください。" },
+        { error: "数量は 2 シート以上の 2 の倍数で入力してください。" },
         { status: 400 }
       );
     }

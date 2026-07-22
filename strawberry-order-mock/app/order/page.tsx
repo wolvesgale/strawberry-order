@@ -202,8 +202,8 @@ export default function OrderPage() {
       return;
     }
 
-    if (!quantity || quantity < 4 || quantity % 4 !== 0) {
-      setError("数量は 4 シート以上の 4 の倍数で入力してください。");
+    if (!quantity || quantity < 2 || quantity % 2 !== 0) {
+      setError("数量は 2 シート以上の 2 の倍数で入力してください。");
       return;
     }
 
@@ -411,14 +411,17 @@ export default function OrderPage() {
             </label>
             <input
               type="number"
-              min={4}
-              step={4}
+              min={2}
+              step={2}
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
               value={quantity}
               onChange={(e) => setQuantity(Number(e.target.value))}
             />
             <p className="text-xs text-slate-500">
-              4シート以上、4の倍数で入力してください。
+              2シート以上、2の倍数で入力してください。
+            </p>
+            <p className="text-xs text-amber-400/80">
+              ※ 夏いちごにつき発注単位を2に変更しました。
             </p>
           </div>
 
