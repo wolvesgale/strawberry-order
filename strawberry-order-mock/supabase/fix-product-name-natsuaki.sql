@@ -3,11 +3,11 @@
 
 UPDATE product_prices
 SET product_name = '夏秋いちご'
-WHERE product_name = '夏秋いちご（章姫）';
+WHERE product_name IN ('夏秋いちご（章姫）', '夏いちご（章姫）');
 
 UPDATE orders
 SET product_name = '夏秋いちご'
-WHERE product_name = '夏秋いちご（章姫）';
+WHERE product_name IN ('夏秋いちご（章姫）', '夏いちご（章姫）');
 
 -- 確認
 SELECT DISTINCT product_name FROM product_prices ORDER BY product_name;
