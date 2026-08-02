@@ -278,7 +278,7 @@ export async function POST(req: Request) {
       display_name: displayName,
       role,
       agency_id: agencyIdToUse,
-      email,
+      email: email.toLowerCase(),
     } as const;
 
     const { error: profileInsertError } = await client.from("profiles").insert(profilePayload);

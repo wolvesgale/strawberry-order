@@ -184,7 +184,7 @@ async function resolveOrderActorSnapshot(
   const { data: profile, error: profileError } = await client
     .from("profiles")
     .select("id, agency_id, agency_name")
-    .eq("email", normalizedEmail)
+    .ilike("email", normalizedEmail)
     .maybeSingle();
 
   if (profileError) {
