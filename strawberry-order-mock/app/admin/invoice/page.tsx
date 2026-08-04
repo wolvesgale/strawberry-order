@@ -91,6 +91,11 @@ function InvoiceContent() {
         }
         return true;
       });
+      filtered.sort((a, b) => {
+        const da = a.deliveryDate ?? a.createdAt ?? "";
+        const db = b.deliveryDate ?? b.createdAt ?? "";
+        return da.localeCompare(db);
+      });
       setOrders(filtered);
     } catch (e: any) {
       setError(e.message);
