@@ -60,6 +60,19 @@ function InvoiceContent() {
     }).format(new Date());
   });
 
+  const paymentDueDate = useMemo(() => {
+    if (!month) return null;
+    const [y, m] = month.split("-").map(Number);
+    // 請求月の翌月末日
+    const lastDay = new Date(y, m + 1, 0);
+    return new Intl.DateTimeFormat("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }).format(lastDay);
+  }, [month]);
+
   useEffect(() => {
     async function init() {
       const { data } = await supabase.auth.getUser();
@@ -187,6 +200,9 @@ function InvoiceContent() {
           <p className="text-sm font-medium text-gray-600">ご請求金額（税込）</p>
           <p className="text-2xl font-bold">¥{fmt(summary.grandTotal)}</p>
         </div>
+        {paymentDueDate && (
+          <p className="text-sm text-gray-700">振込期日：{paymentDueDate}</p>
+        )}
 
         {/* 注文明細 */}
         <div>
@@ -299,6 +315,21 @@ function InvoiceContent() {
           <p>■ 税率について</p>
           <p className="text-orange-600">● いちご（農産物）：消費税 {DEFAULT_PRODUCT_TAX_RATE}%（軽減税率対象）</p>
           <p className="text-blue-600">● 送　料：消費税 {SHIPPING_TAX_RATE}%（標準税率）</p>
+        </div>
+
+        {/* お振込先 */}
+        <div className="text-sm border border-gray-300 rounded p-4 space-y-1">
+          <p className="font-semibold text-gray-700">■ お振込先</p>
+          <p>株式会社Saiya</p>
+          <p>ペイペイ銀行　ビジネス営業部（店番　005）</p>
+          <p>口座番号　7857589</p>
+          <p>口座名義　ｶ)ｻｲﾔ</p>
+        </div>
+
+        {/* 備考 */}
+        <div className="text-sm border border-gray-300 rounded p-4 space-y-1">
+          <p className="font-semibold text-gray-700">【備考】</p>
+          <p className="text-gray-600">恐れ入りますが振込手数料はお客様のご負担でお願いいたします。</p>
         </div>
       </div>
     </div>
