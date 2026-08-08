@@ -190,6 +190,16 @@ function InvoiceContent() {
           </div>
         </div>
 
+        {/* 発行者情報 */}
+        <div className="flex justify-end">
+          <div className="text-right text-xs text-gray-600 space-y-0.5">
+            <p className="font-semibold text-gray-800 text-sm">株式会社Saiya</p>
+            <p>〒454-0925　愛知県名古屋市中川区中須町234-5</p>
+            <p>TEL：090-9195-4649</p>
+            <p>適格請求書発行事業者登録番号：T4180001145260</p>
+          </div>
+        </div>
+
         {/* 宛先 */}
         <div className="border-b border-gray-300 pb-4">
           <p className="text-lg font-semibold">{agencyName}　御中</p>
@@ -313,15 +323,16 @@ function InvoiceContent() {
         {/* 税率凡例 */}
         <div className="text-[10px] text-gray-500 space-y-0.5 border-t pt-3">
           <p>■ 税率について</p>
-          <p className="text-orange-600">● いちご（農産物）：消費税 {DEFAULT_PRODUCT_TAX_RATE}%（軽減税率対象）</p>
+          <p className="text-orange-600">● いちご（食品・農産物）：消費税 {DEFAULT_PRODUCT_TAX_RATE}%（食品軽減税率対象）</p>
           <p className="text-blue-600">● 送　料：消費税 {SHIPPING_TAX_RATE}%（標準税率）</p>
+          <p className="mt-1">適格請求書発行事業者登録番号：T4180001145260</p>
         </div>
 
         {/* お振込先 */}
         <div className="text-sm border border-gray-300 rounded p-4 space-y-1">
           <p className="font-semibold text-gray-700">■ お振込先</p>
           <p>株式会社Saiya</p>
-          <p>ペイペイ銀行　ビジネス営業部（店番　005）</p>
+          <p>PayPay銀行　ビジネス営業部</p>
           <p>口座番号　7857589</p>
           <p>口座名義　ｶ)ｻｲﾔ</p>
         </div>
