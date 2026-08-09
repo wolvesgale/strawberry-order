@@ -286,61 +286,61 @@ function InvoiceContent() {
           </table>
         </div>
 
-        {/* 税額集計 */}
-        <div className="flex justify-end">
-          <table className="text-sm border border-gray-300 border-collapse">
-            <tbody>
-              <tr>
-                <td className="border border-gray-300 px-4 py-1.5 text-gray-600">商品小計（税抜）</td>
-                <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.productSubtotal)}</td>
-              </tr>
-              <tr className="bg-orange-50">
-                <td className="border border-gray-300 px-4 py-1.5 text-gray-600">
-                  うち消費税（{DEFAULT_PRODUCT_TAX_RATE}%・軽減税率）
-                </td>
-                <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.productTax)}</td>
-              </tr>
-              <tr>
-                <td className="border border-gray-300 px-4 py-1.5 text-gray-600">送料小計（税抜）</td>
-                <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.shippingSubtotal)}</td>
-              </tr>
-              <tr className="bg-blue-50">
-                <td className="border border-gray-300 px-4 py-1.5 text-gray-600">
-                  うち消費税（{SHIPPING_TAX_RATE}%）
-                </td>
-                <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.shippingTax)}</td>
-              </tr>
-              <tr className="bg-gray-800 text-white">
-                <td className="border border-gray-600 px-4 py-2 font-semibold">合計（税込）</td>
-                <td className="border border-gray-600 px-4 py-2 text-right font-bold text-lg">
-                  ¥{fmt(summary.grandTotal)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        {/* 小計・振込先エリア（横並び） */}
+        <div className="flex gap-4 items-start">
+          {/* 左：振込先・税率・備考 */}
+          <div className="flex-1 space-y-3 text-xs text-gray-600">
+            <div className="border border-gray-300 rounded p-3 space-y-0.5">
+              <p className="font-semibold text-gray-700 text-sm">■ お振込先</p>
+              <p>株式会社Saiya</p>
+              <p>PayPay銀行　ビジネス営業部</p>
+              <p>口座番号　7857589　　口座名義　ｶ)ｻｲﾔ</p>
+            </div>
+            <div className="space-y-0.5">
+              <p className="font-semibold text-gray-700">■ 税率について</p>
+              <p className="text-orange-600">● いちご（食品・農産物）：消費税 {DEFAULT_PRODUCT_TAX_RATE}%（食品軽減税率対象）</p>
+              <p className="text-blue-600">● 送　料：消費税 {SHIPPING_TAX_RATE}%（標準税率）</p>
+              <p className="mt-0.5">適格請求書発行事業者登録番号：T4180001145260</p>
+            </div>
+            <div className="border border-gray-300 rounded p-3 space-y-0.5">
+              <p className="font-semibold text-gray-700">【備考】</p>
+              <p>恐れ入りますが振込手数料はお客様のご負担でお願いいたします。</p>
+            </div>
+          </div>
 
-        {/* 税率凡例 */}
-        <div className="text-[10px] text-gray-500 space-y-0.5 border-t pt-3">
-          <p>■ 税率について</p>
-          <p className="text-orange-600">● いちご（食品・農産物）：消費税 {DEFAULT_PRODUCT_TAX_RATE}%（食品軽減税率対象）</p>
-          <p className="text-blue-600">● 送　料：消費税 {SHIPPING_TAX_RATE}%（標準税率）</p>
-          <p className="mt-1">適格請求書発行事業者登録番号：T4180001145260</p>
-        </div>
-
-        {/* お振込先 */}
-        <div className="text-sm border border-gray-300 rounded p-4 space-y-1">
-          <p className="font-semibold text-gray-700">■ お振込先</p>
-          <p>株式会社Saiya</p>
-          <p>PayPay銀行　ビジネス営業部</p>
-          <p>口座番号　7857589</p>
-          <p>口座名義　ｶ)ｻｲﾔ</p>
-        </div>
-
-        {/* 備考 */}
-        <div className="text-sm border border-gray-300 rounded p-4 space-y-1">
-          <p className="font-semibold text-gray-700">【備考】</p>
-          <p className="text-gray-600">恐れ入りますが振込手数料はお客様のご負担でお願いいたします。</p>
+          {/* 右：税額集計 */}
+          <div className="shrink-0">
+            <table className="text-sm border border-gray-300 border-collapse">
+              <tbody>
+                <tr>
+                  <td className="border border-gray-300 px-4 py-1.5 text-gray-600">商品小計（税抜）</td>
+                  <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.productSubtotal)}</td>
+                </tr>
+                <tr className="bg-orange-50">
+                  <td className="border border-gray-300 px-4 py-1.5 text-gray-600">
+                    うち消費税（{DEFAULT_PRODUCT_TAX_RATE}%・軽減税率）
+                  </td>
+                  <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.productTax)}</td>
+                </tr>
+                <tr>
+                  <td className="border border-gray-300 px-4 py-1.5 text-gray-600">送料小計（税抜）</td>
+                  <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.shippingSubtotal)}</td>
+                </tr>
+                <tr className="bg-blue-50">
+                  <td className="border border-gray-300 px-4 py-1.5 text-gray-600">
+                    うち消費税（{SHIPPING_TAX_RATE}%）
+                  </td>
+                  <td className="border border-gray-300 px-4 py-1.5 text-right">¥{fmt(summary.shippingTax)}</td>
+                </tr>
+                <tr className="bg-gray-800 text-white">
+                  <td className="border border-gray-600 px-4 py-2 font-semibold">合計（税込）</td>
+                  <td className="border border-gray-600 px-4 py-2 text-right font-bold text-lg">
+                    ¥{fmt(summary.grandTotal)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
