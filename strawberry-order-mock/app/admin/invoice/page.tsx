@@ -85,6 +85,13 @@ function InvoiceContent() {
     init();
   }, [agencyId, month, router]);
 
+  useEffect(() => {
+    if (month && agencyName) {
+      const [y, m] = month.split("-");
+      document.title = `${y}年${parseInt(m, 10)}月_${agencyName}`;
+    }
+  }, [month, agencyName]);
+
   async function fetchOrders() {
     setLoading(true);
     setError(null);
@@ -289,7 +296,7 @@ function InvoiceContent() {
         {/* 小計・振込先エリア（横並び） */}
         <div className="flex gap-4 items-start">
           {/* 左：振込先・税率・備考 */}
-          <div className="flex-1 space-y-3 text-xs text-gray-600">
+          <div className="flex-1 min-w-0 space-y-3 text-xs text-gray-600">
             <div className="border border-gray-300 rounded p-3 space-y-0.5">
               <p className="font-semibold text-gray-700 text-sm">■ お振込先</p>
               <p>株式会社Saiya</p>
