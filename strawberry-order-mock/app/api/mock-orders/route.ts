@@ -502,22 +502,18 @@ export async function POST(request: NextRequest) {
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
 
-    const { count, error: countError } = await client
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", dayStart.toISOString())
-      .lt("created_at", dayEnd.toISOString());
+    const { data: orderNumData, error: countError } = await client
+      .rpc("generate_order_number");
 
-    if (countError) {
-      console.error("[/api/mock-orders POST] orders count error", countError);
+    if (countError || !orderNumData) {
+      console.error("[/api/mock-orders POST] order number generation error", countError);
       return NextResponse.json(
         { error: "注文番号の採番に失敗しました。" },
         { status: 500 }
       );
     }
 
-    const seq = (count ?? 0) + 1;
-    const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
+    const orderNumber = orderNumData as string;
 
     let unitPrice: number | null =
       typeof body.unitPrice === "number" ? body.unitPrice : null;
