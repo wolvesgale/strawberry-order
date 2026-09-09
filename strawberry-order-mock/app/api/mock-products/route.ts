@@ -17,17 +17,17 @@ export type MockProduct = {
 export const PRODUCTS: MockProduct[] = [
   {
     id: "akihime-summer",
-    name: "夏秋いちご（章姫）",
+    name: "夏秋いちご",
     season: "summer",
-    unitPrice: 5000,
-    taxRate: 10,
+    unitPrice: 1550,
+    taxRate: 8,
   },
   {
     id: "akihime-winter",
     name: "冬いちご（章姫）",
     season: "winter",
-    unitPrice: 5500,
-    taxRate: 10,
+    unitPrice: 1550,
+    taxRate: 8,
   },
 ];
 

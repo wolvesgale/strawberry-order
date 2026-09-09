@@ -1,8 +1,36 @@
 import crypto from "crypto";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
+
+async function writeAuditLog(
+  action: string,
+  targetEmail: string | null,
+  targetUserId: string | null,
+  detail: Record<string, unknown>,
+  req: Request | NextRequest
+) {
+  if (!supabaseAdmin) return;
+  try {
+    const authHeader = req.headers.get("authorization") ?? "";
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    let performedByEmail: string | null = null;
+    if (token) {
+      const { data } = await supabaseAdmin.auth.getUser(token);
+      performedByEmail = data?.user?.email ?? null;
+    }
+    await supabaseAdmin.from("admin_audit_logs").insert({
+      performed_by_email: performedByEmail,
+      action,
+      target_email: targetEmail,
+      target_user_id: targetUserId,
+      detail,
+    });
+  } catch (e) {
+    console.error("[audit_log] failed to write", e);
+  }
+}
 
 type AgencyRow = {
   id: string;
@@ -278,7 +306,7 @@ export async function POST(req: Request) {
       display_name: displayName,
       role,
       agency_id: agencyIdToUse,
-      email,
+      email: email.toLowerCase(),
     } as const;
 
     const { error: profileInsertError } = await client.from("profiles").insert(profilePayload);
@@ -306,6 +334,7 @@ export async function POST(req: Request) {
       emails
     )[0];
 
+    await writeAuditLog("user_create", email, authCreated.user.id, { displayName, role, agencyId: agencyIdToUse }, req);
     return NextResponse.json({ user: createdUser, initialPassword: password });
   } catch (error) {
     console.error("[/api/admin/users POST] unexpected error", error);
@@ -400,6 +429,11 @@ export async function PUT(req: Request) {
         console.error("[/api/admin/users PUT] auth update error", authUpdateError);
         return NextResponse.json({ error: "認証情報の更新に失敗しました。" }, { status: 500 });
       }
+      const action = password ? "password_change" : "email_change";
+      await writeAuditLog(action, email ?? null, id, { changedFields: Object.keys(authUpdates) }, req);
+    }
+    if (Object.keys(updates).length > 0) {
+      await writeAuditLog("user_update", email ?? null, id, { updatedFields: updates }, req);
     }
 
     const [{ data: profile }, { data: agencies }] = await Promise.all([

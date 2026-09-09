@@ -93,9 +93,11 @@ function normalizeEmail(email: string | null): string | null {
 }
 
 function formatShippingFee(quantity: number): string {
-  if (quantity <= 40) return "1,410";
+  if (quantity <= 40) return "1,410 (10%)";
   return "個別見積";
 }
+
+const PRODUCT_TAX_RATE = 8; // 農産物（いちご）は常に軽減税率8%
 
 function calculateDisplayAmounts(order: Order): {
   subtotal: number | null;
@@ -111,8 +113,7 @@ function calculateDisplayAmounts(order: Order): {
   }
 
   const subtotal = order.unitPrice * order.quantity;
-  const taxRate = order.taxRate ?? 0;
-  const taxAmount = Math.round(subtotal * (taxRate / 100));
+  const taxAmount = Math.round(subtotal * (PRODUCT_TAX_RATE / 100));
   const totalAmount = subtotal + taxAmount;
 
   if (
@@ -146,6 +147,7 @@ export default function AdminOrdersPage() {
   const [userRole, setUserRole] = useState<"admin" | "agency" | null>(null);
 
   const [orders, setOrders] = useState<Order[]>([]);
+  const [allAgencies, setAllAgencies] = useState<{ id: string; name: string }[]>([]);
   const [selectedAgency, setSelectedAgency] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -168,18 +170,24 @@ export default function AdminOrdersPage() {
     return base.filter((o) => o.status !== "canceled");
   }, [orders, isAdmin, normalizedEmail]);
 
-  // 代理店フィルタ候補（valueは agencyId、labelは agencyName）
+  // 代理店フィルタ候補：DBの全代理店 + 注文にある未紐付け代理店も補完
   const agencyOptions = useMemo(() => {
     const map = new Map<string, string>();
+    // DBから取得した全代理店を先に入れる
+    for (const a of allAgencies) {
+      map.set(a.id, a.name);
+    }
+    // 注文に含まれる代理店（DBにない可能性があるもの）を補完
     for (const o of visibleOrders) {
       const id = o.agencyId ?? "unassigned";
-      const label = o.agencyId
-        ? o.agencyName ?? o.agencyId
-        : "未設定";
-      map.set(id, label);
+      if (!map.has(id)) {
+        map.set(id, o.agencyId ? (o.agencyName ?? o.agencyId) : "未設定");
+      }
     }
-    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
-  }, [visibleOrders]);
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "ja"));
+  }, [allAgencies, visibleOrders]);
 
   const filteredOrders = useMemo(() => {
     return visibleOrders.filter((order) => {
@@ -306,6 +314,16 @@ export default function AdminOrdersPage() {
     }
 
     fetchOrders();
+  }, []);
+
+  // 代理店一覧をDBから取得
+  useEffect(() => {
+    fetch("/api/admin/agencies")
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (json?.agencies) setAllAgencies(json.agencies);
+      })
+      .catch(() => {});
   }, []);
 
   async function updateOrder(
@@ -445,6 +463,14 @@ export default function AdminOrdersPage() {
                 ユーザー管理
               </Link>
             )}
+            {isAdmin && (
+              <Link
+                href="/admin/prices"
+                className="rounded-md border border-amber-500 bg-amber-600/10 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-500/20"
+              >
+                価格マスタ
+              </Link>
+            )}
             <Link
               href="/order"
               className="rounded-md border border-emerald-500 bg-emerald-600/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
@@ -550,32 +576,50 @@ export default function AdminOrdersPage() {
                       <th className="px-3 py-2 text-right">小計(税抜)</th>
                       <th className="px-3 py-2 text-right">消費税</th>
                       <th className="px-3 py-2 text-right">合計(税込)</th>
+                      <th className="px-3 py-2 text-center">請求書</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {monthlySummary.byAgency.map((row) => (
-                      <tr key={row.agencyId} className="border-t border-slate-800">
-                        <td className="px-3 py-2 text-slate-100">
-                          {row.agencyName}
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-200">
-                          {row.count.toLocaleString("ja-JP")}
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-200">
-                          {formatCurrency(row.subtotal)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-200">
-                          {formatCurrency(row.taxAmount)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-emerald-100">
-                          {formatCurrency(row.totalAmount)}
-                        </td>
-                      </tr>
-                    ))}
+                    {monthlySummary.byAgency.map((row) => {
+                      const invoiceUrl = `/admin/invoice?agencyId=${encodeURIComponent(row.agencyId)}&agencyName=${encodeURIComponent(row.agencyName)}&month=${encodeURIComponent(selectedMonth)}`;
+                      return (
+                        <tr key={row.agencyId} className="border-t border-slate-800">
+                          <td className="px-3 py-2 text-slate-100">
+                            {row.agencyName}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-200">
+                            {row.count.toLocaleString("ja-JP")}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-200">
+                            {formatCurrency(row.subtotal)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-200">
+                            {formatCurrency(row.taxAmount)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-emerald-100">
+                            {formatCurrency(row.totalAmount)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {selectedMonth ? (
+                              <a
+                                href={invoiceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center rounded-md border border-sky-500 px-2.5 py-1 text-[11px] font-medium text-sky-200 hover:bg-sky-500/10"
+                              >
+                                請求書作成
+                              </a>
+                            ) : (
+                              <span className="text-slate-600 text-[10px]">月を選択</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {monthlySummary.byAgency.length === 0 && (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={6}
                           className="px-3 py-4 text-center text-[11px] text-slate-500"
                         >
                           対象月の注文がありません。

@@ -15,14 +15,7 @@ type MockProduct = {
   taxRate: number;
 };
 
-const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
-
-const NATSUAKI_PRICE_TABLE = [
-  { pieces: 20, price: 1296 },
-  { pieces: 24, price: 1188 },
-  { pieces: 30, price: 1080 },
-  { pieces: 36, price: 1300 },
-];
+const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
 
 export default function OrderPage() {
   const router = useRouter();
@@ -49,6 +42,9 @@ export default function OrderPage() {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [agencyId, setAgencyId] = useState<string | null>(null);
   const [agencyName, setAgencyName] = useState<string | null>(null);
+
+  // 価格マスタ
+  const [priceTable, setPriceTable] = useState<{ pieces: number; price: number }[]>([]);
 
   // UI状態
   const [submitting, setSubmitting] = useState(false);
@@ -120,6 +116,48 @@ export default function OrderPage() {
     checkAuth();
   }, [router]);
 
+  // 価格マスタ取得（有効期間内のもので玉数ごとに最新の1件）
+  useEffect(() => {
+    async function fetchPrices() {
+      try {
+        const res = await fetch("/api/admin/prices", { cache: "no-store" });
+        if (!res.ok) return;
+        const json = await res.json();
+        const today = new Date().toISOString().slice(0, 10);
+        const allPrices: {
+          pieces_per_sheet: number | null;
+          unit_price: number;
+          effective_from: string;
+          effective_to: string | null;
+        }[] = json.prices ?? [];
+
+        // 有効期間内のレコードを玉数ごとにまとめ、最新の適用開始日を採用
+        const map = new Map<number, number>();
+        allPrices
+          .filter(
+            (p) =>
+              p.pieces_per_sheet != null &&
+              p.effective_from <= today &&
+              (p.effective_to == null || p.effective_to >= today)
+          )
+          .sort((a, b) => b.effective_from.localeCompare(a.effective_from))
+          .forEach((p) => {
+            if (!map.has(p.pieces_per_sheet!)) {
+              map.set(p.pieces_per_sheet!, p.unit_price);
+            }
+          });
+
+        const table = PIECES_PER_SHEET_OPTIONS
+          .filter((n) => map.has(n))
+          .map((n) => ({ pieces: n, price: map.get(n)! }));
+        setPriceTable(table);
+      } catch {
+        // 価格取得失敗は非致命的
+      }
+    }
+    fetchPrices();
+  }, []);
+
   // 商品一覧取得
   useEffect(() => {
     async function fetchProducts() {
@@ -164,13 +202,8 @@ export default function OrderPage() {
       return;
     }
 
-    if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
-      setError("数量は 1 以上の偶数で入力してください。");
-      return;
-    }
-
-    if (selectedProduct?.season === "winter" && quantity % 4 !== 0) {
-      setError("冬いちごは 4 の倍数で発注してください。");
+    if (!quantity || quantity < 2 || quantity % 2 !== 0) {
+      setError("数量は 2 シート以上の 2 の倍数で入力してください。");
       return;
     }
 
@@ -218,6 +251,7 @@ export default function OrderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId: selectedProductId,
+          productName: selectedProduct?.name ?? "",
           quantity,
           piecesPerSheet,
           postalAndAddress,
@@ -304,25 +338,26 @@ export default function OrderPage() {
             玉数ごとに税抜単価が設定されています。発注時の単価算定に使用されます。
           </p>
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
-            <table className="min-w-full text-xs text-slate-100">
-              <tbody>
-                {NATSUAKI_PRICE_TABLE.map((item) => (
-                  <tr
-                    key={item.pieces}
-                    className="border-t border-slate-800 first:border-t-0"
-                  >
-                    <td className="px-3 py-2">{item.pieces}玉</td>
-                    <td className="px-3 py-2 text-right">
-                      {item.price.toLocaleString()}円
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {priceTable.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-slate-400">価格情報を読み込み中...</p>
+            ) : (
+              <table className="min-w-full text-xs text-slate-100">
+                <tbody>
+                  {priceTable.map((item) => (
+                    <tr
+                      key={item.pieces}
+                      className="border-t border-slate-800 first:border-t-0"
+                    >
+                      <td className="px-3 py-2">{item.pieces}玉</td>
+                      <td className="px-3 py-2 text-right">
+                        {item.price.toLocaleString()}円
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-          <p className="mt-2 text-xs font-semibold text-red-300">
-            36玉は現在販売休止中のため、発注フォームでは選択できません。
-          </p>
         </section>
 
         {/* フォーム本体 */}
@@ -365,7 +400,7 @@ export default function OrderPage() {
               ))}
             </select>
             <p className="text-xs text-slate-500">
-              30玉 / 24玉 / 20玉 から選択します。
+              36玉 / 30玉 / 24玉 / 20玉 から選択します。
             </p>
           </div>
 
@@ -383,7 +418,10 @@ export default function OrderPage() {
               onChange={(e) => setQuantity(Number(e.target.value))}
             />
             <p className="text-xs text-slate-500">
-              2シート以上の偶数で入力してください。冬いちごは 4 の倍数になります。
+              2シート以上、2の倍数で入力してください。
+            </p>
+            <p className="text-xs text-amber-400/80">
+              ※ 夏いちごにつき発注単位を2に変更しました。
             </p>
           </div>
 

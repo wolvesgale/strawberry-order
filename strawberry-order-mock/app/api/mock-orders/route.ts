@@ -34,12 +34,12 @@ export type MockOrder = {
 const ORDER_MAIL_MODE = process.env.ORDER_MAIL_MODE ?? "mock";
 
 const NATSUAKI_STRAWBERRY_PRICES: Record<number, number> = {
-  20: 1296,
-  24: 1188,
-  30: 1080,
+  20: 1700,
+  24: 1650,
+  30: 1550,
   36: 1300,
 };
-const DEFAULT_TAX_RATE = 10;
+const DEFAULT_TAX_RATE = 8;
 
 function normalizeEmail(email: string | null | undefined): string | null {
   if (!email) return null;
@@ -60,15 +60,24 @@ function ensureSupabase() {
 async function fetchEffectivePrice(
   client: NonNullable<ReturnType<typeof ensureSupabase>>,
   productName: string,
-  effectiveAt: string
+  effectiveAt: string,
+  piecesPerSheet?: number | null
 ): Promise<{ unitPrice: number; taxRate: number } | null> {
-  const { data, error } = await client
+  const today = effectiveAt.slice(0, 10);
+  let query = client
     .from("product_prices")
     .select("unit_price, tax_rate")
     .eq("product_name", productName)
-    .lte("effective_from", effectiveAt)
+    .lte("effective_from", today)
+    .or(`effective_to.is.null,effective_to.gte.${today}`)
     .order("effective_from", { ascending: false })
     .limit(1);
+
+  if (piecesPerSheet != null) {
+    query = query.eq("pieces_per_sheet", piecesPerSheet);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[/api/mock-orders] product_prices lookup error", error);
@@ -175,7 +184,7 @@ async function resolveOrderActorSnapshot(
   const { data: profile, error: profileError } = await client
     .from("profiles")
     .select("id, agency_id, agency_name")
-    .eq("email", normalizedEmail)
+    .ilike("email", normalizedEmail)
     .maybeSingle();
 
   if (profileError) {
@@ -418,7 +427,7 @@ export async function POST(request: NextRequest) {
 
     if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(
-        { error: "数量は 1 以上の偶数で入力してください。" },
+        { error: "数量は 2 シート以上の 2 の倍数で入力してください。" },
         { status: 400 }
       );
     }
@@ -430,7 +439,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const PIECES_PER_SHEET_OPTIONS = [30, 24, 20];
+    const PIECES_PER_SHEET_OPTIONS = [36, 30, 24, 20];
     if (!piecesPerSheet || !PIECES_PER_SHEET_OPTIONS.includes(Number(piecesPerSheet))) {
       return NextResponse.json(
         { error: "1シートあたりの玉数を選択してください。" },
@@ -493,22 +502,18 @@ export async function POST(request: NextRequest) {
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
 
-    const { count, error: countError } = await client
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .gte("created_at", dayStart.toISOString())
-      .lt("created_at", dayEnd.toISOString());
+    const { data: orderNumData, error: countError } = await client
+      .rpc("generate_order_number");
 
-    if (countError) {
-      console.error("[/api/mock-orders POST] orders count error", countError);
+    if (countError || !orderNumData) {
+      console.error("[/api/mock-orders POST] order number generation error", countError);
       return NextResponse.json(
         { error: "注文番号の採番に失敗しました。" },
         { status: 500 }
       );
     }
 
-    const seq = (count ?? 0) + 1;
-    const orderNumber = `ORD-${datePart}-${String(seq).padStart(4, "0")}`;
+    const orderNumber = orderNumData as string;
 
     let unitPrice: number | null =
       typeof body.unitPrice === "number" ? body.unitPrice : null;
@@ -518,7 +523,7 @@ export async function POST(request: NextRequest) {
     const piecesNum = piecesPerSheet != null ? Number(piecesPerSheet) : null;
 
     if (productName && (unitPrice == null || taxRate == null)) {
-      const price = await fetchEffectivePrice(client, productName, now.toISOString());
+      const price = await fetchEffectivePrice(client, productName, now.toISOString(), piecesNum);
       if (price) {
         if (unitPrice == null) unitPrice = price.unitPrice;
         if (taxRate == null) taxRate = price.taxRate;
