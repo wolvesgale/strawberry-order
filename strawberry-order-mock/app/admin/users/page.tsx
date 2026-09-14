@@ -43,6 +43,8 @@ export default function AdminUsersPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
+  const [editingAgencyNames, setEditingAgencyNames] = useState<Record<string, string>>({});
+  const [renamingAgencyId, setRenamingAgencyId] = useState<string | null>(null);
 
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -203,6 +205,33 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function handleRenameAgency(id: string) {
+    const name = (editingAgencyNames[id] ?? '').trim();
+    if (!name) return;
+    setRenamingAgencyId(id);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/admin/agencies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || '屋号の変更に失敗しました。');
+      }
+      setAgencies((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
+      setUsers((prev) => prev.map((u) => (u.agencyId === id ? { ...u, agencyName: name } : u)));
+      setEditingAgencyNames((prev) => { const next = { ...prev }; delete next[id]; return next; });
+      setMessage(`屋号を「${name}」に変更しました。注文データも更新されました。`);
+    } catch (e: any) {
+      setError(e.message || '屋号の変更に失敗しました。');
+    } finally {
+      setRenamingAgencyId(null);
+    }
+  }
+
   async function handleBackfill() {
     setBackfilling(true);
     setError(null);
@@ -300,6 +329,42 @@ export default function AdminUsersPage() {
               {backfilling ? '実行中...' : 'バックフィル実行'}
             </button>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-100">代理店管理（屋号変更）</h2>
+            <p className="text-xs text-slate-400">名前を変更すると関連する注文データも自動更新されます。</p>
+          </div>
+          {agencies.length === 0 ? (
+            <p className="text-xs text-slate-400">代理店が登録されていません。</p>
+          ) : (
+            <div className="space-y-2">
+              {agencies.map((agency) => {
+                const currentValue = editingAgencyNames[agency.id] ?? agency.name;
+                const isChanged = currentValue !== agency.name;
+                return (
+                  <div key={agency.id} className="flex items-center gap-2">
+                    <input
+                      className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                      value={currentValue}
+                      onChange={(e) =>
+                        setEditingAgencyNames((prev) => ({ ...prev, [agency.id]: e.target.value }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      disabled={renamingAgencyId === agency.id || !isChanged}
+                      onClick={() => handleRenameAgency(agency.id)}
+                      className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40"
+                    >
+                      {renamingAgencyId === agency.id ? '保存中...' : '保存'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 shadow-sm space-y-2">

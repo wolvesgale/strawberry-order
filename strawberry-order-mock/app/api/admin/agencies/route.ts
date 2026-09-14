@@ -3,25 +3,38 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+// PATCH: 代理店名変更（agencies + orders.agency_name を更新）
+export async function PATCH(req: Request) {
   if (!supabaseAdmin) {
-    return NextResponse.json({ error: "サーバー設定エラーです。" }, { status: 500 });
+    return NextResponse.json({ error: "Server config error" }, { status: 500 });
   }
 
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("agencies")
-      .select("id, name")
-      .order("name");
+  const body = await req.json().catch(() => ({}));
+  const id = (body.id as string)?.trim();
+  const name = (body.name as string)?.trim();
 
-    if (error) {
-      console.error("[/api/admin/agencies GET]", error);
-      return NextResponse.json({ error: "代理店情報の取得に失敗しました。" }, { status: 500 });
-    }
-
-    return NextResponse.json({ agencies: data ?? [] });
-  } catch (e) {
-    console.error("[/api/admin/agencies GET] unexpected", e);
-    return NextResponse.json({ error: "代理店情報の取得に失敗しました。" }, { status: 500 });
+  if (!id || !name) {
+    return NextResponse.json({ error: "代理店IDと名前は必須です。" }, { status: 400 });
   }
+
+  const { error: agencyError } = await supabaseAdmin
+    .from("agencies")
+    .update({ name })
+    .eq("id", id);
+
+  if (agencyError) {
+    return NextResponse.json({ error: agencyError.message }, { status: 500 });
+  }
+
+  // orders.agency_name も連動して更新
+  const { error: ordersError } = await supabaseAdmin
+    .from("orders")
+    .update({ agency_name: name })
+    .eq("agency_id", id);
+
+  if (ordersError) {
+    console.error("[/api/admin/agencies PATCH] orders update error", ordersError);
+  }
+
+  return NextResponse.json({ ok: true, name });
 }
