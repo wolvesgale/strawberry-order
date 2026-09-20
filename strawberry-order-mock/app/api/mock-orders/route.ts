@@ -175,24 +175,26 @@ async function resolveOrderActorSnapshot(
   userId: string | null;
   agencyId: string | null;
   agencyName: string | null;
+  orderDisabled: boolean;
 }> {
   const normalizedEmail = normalizeEmail(createdByEmail);
   if (!normalizedEmail) {
-    return { userId: null, agencyId, agencyName };
+    return { userId: null, agencyId, agencyName, orderDisabled: false };
   }
 
   const { data: profile, error: profileError } = await client
     .from("profiles")
-    .select("id, agency_id, agency_name")
+    .select("id, agency_id, agency_name, order_disabled")
     .ilike("email", normalizedEmail)
     .maybeSingle();
 
   if (profileError) {
     console.error("[/api/mock-orders POST] profiles lookup error", profileError);
-    return { userId: null, agencyId, agencyName };
+    return { userId: null, agencyId, agencyName, orderDisabled: false };
   }
 
   const resolvedUserId = profile?.id ?? null;
+  const orderDisabled = profile?.order_disabled === true;
   const resolvedAgencyId = agencyId ?? profile?.agency_id ?? null;
 
   if (!resolvedAgencyId) {
@@ -200,6 +202,7 @@ async function resolveOrderActorSnapshot(
       userId: resolvedUserId,
       agencyId,
       agencyName: profile?.agency_name ?? agencyName,
+      orderDisabled,
     };
   }
 
@@ -217,6 +220,7 @@ async function resolveOrderActorSnapshot(
     userId: resolvedUserId,
     agencyId: resolvedAgencyId,
     agencyName: agency?.name ?? profile?.agency_name ?? agencyName,
+    orderDisabled,
   };
 }
 
@@ -424,6 +428,13 @@ export async function POST(request: NextRequest) {
     agencyId = resolvedActor.agencyId;
     agencyName = resolvedActor.agencyName;
     userId = userId ?? resolvedActor.userId ?? null;
+
+    if (resolvedActor.orderDisabled) {
+      return NextResponse.json(
+        { error: "安定供給ができないため発注をお受けできません。" },
+        { status: 403 }
+      );
+    }
 
     if (!quantity || quantity <= 0 || quantity % 2 !== 0) {
       return NextResponse.json(

@@ -42,6 +42,7 @@ export default function OrderPage() {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [agencyId, setAgencyId] = useState<string | null>(null);
   const [agencyName, setAgencyName] = useState<string | null>(null);
+  const [orderDisabled, setOrderDisabled] = useState(false);
 
   // 価格マスタ
   const [priceTable, setPriceTable] = useState<{ pieces: number; price: number }[]>([]);
@@ -74,12 +75,17 @@ export default function OrderPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("agency_id, agency_name")
+        .select("agency_id, agency_name, order_disabled")
         .eq("id", data.user.id)
         .maybeSingle();
 
       if (profileError) {
         console.error("supabase profiles error", profileError);
+        return;
+      }
+
+      if (profile?.order_disabled === true) {
+        setOrderDisabled(true);
         return;
       }
 
@@ -360,8 +366,21 @@ export default function OrderPage() {
           </div>
         </section>
 
+        {/* 発注停止アナウンス */}
+        {orderDisabled && (
+          <section className="rounded-xl border border-amber-600 bg-amber-950/40 p-6 text-center space-y-2">
+            <p className="text-lg font-semibold text-amber-200">発注受付停止中</p>
+            <p className="text-sm text-amber-100">
+              安定供給ができないため発注をお受けできません。
+            </p>
+            <p className="text-xs text-amber-300/70">
+              ご不明な点は担当者までお問い合わせください。
+            </p>
+          </section>
+        )}
+
         {/* フォーム本体 */}
-        <form
+        {!orderDisabled && <form
           onSubmit={handleSubmit}
           className="space-y-6 rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg"
         >
@@ -505,7 +524,7 @@ export default function OrderPage() {
               {submitting ? "送信中..." : "発注する"}
             </button>
           </div>
-        </form>
+        </form>}
 
         {/* エラーはフォームの下に表示 */}
         {error && (

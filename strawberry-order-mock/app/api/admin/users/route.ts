@@ -46,6 +46,7 @@ type Profile = {
   role: "admin" | "agency" | null;
   agency_id: string | null;
   email?: string | null;
+  order_disabled?: boolean | null;
 };
 
 export type AdminUserListItem = {
@@ -55,6 +56,7 @@ export type AdminUserListItem = {
   role: "admin" | "agency";
   agencyId: string | null;
   agencyName: string | null;
+  orderDisabled: boolean;
 };
 
 type PostBody = {
@@ -75,6 +77,7 @@ type PutBody = {
   role?: "admin" | "agency";
   agencyId?: string | null;
   password?: string | null;
+  orderDisabled?: boolean;
 };
 
 type PatchBody = {
@@ -121,6 +124,7 @@ function mapProfilesToUsers(
         role: p.role,
         agencyId: p.agency_id,
         agencyName: agency?.name ?? null,
+        orderDisabled: p.order_disabled === true,
       };
     });
 }
@@ -168,7 +172,7 @@ export async function GET() {
       { data: profileRows, error: profilesError },
     ] = await Promise.all([
       client.from("agencies").select("id, name, code"),
-      client.from("profiles").select("id, display_name, role, agency_id, email"),
+      client.from("profiles").select("id, display_name, role, agency_id, email, order_disabled"),
     ]);
 
     if (agencyError) {
@@ -360,6 +364,7 @@ export async function PUT(req: Request) {
     const role = body.role;
     const agencyId = body.agencyId;
     const password = body.password?.trim() || null;
+    const orderDisabled = body.orderDisabled;
 
     if (!id) {
       return NextResponse.json({ error: "ユーザーIDが指定されていません。" }, { status: 400 });
@@ -403,6 +408,10 @@ export async function PUT(req: Request) {
       updates.email = email;
     }
 
+    if (orderDisabled !== undefined) {
+      updates.order_disabled = orderDisabled;
+    }
+
     if (Object.keys(updates).length === 0 && !password) {
       return NextResponse.json({ error: "更新する項目が指定されていません。" }, { status: 400 });
     }
@@ -437,7 +446,7 @@ export async function PUT(req: Request) {
     }
 
     const [{ data: profile }, { data: agencies }] = await Promise.all([
-      client.from("profiles").select("id, display_name, role, agency_id, email").eq("id", id).maybeSingle(),
+      client.from("profiles").select("id, display_name, role, agency_id, email, order_disabled").eq("id", id).maybeSingle(),
       client.from("agencies").select("id, name, code"),
     ]);
 
@@ -472,7 +481,7 @@ export async function PATCH(req: Request) {
 
     const { data: currentProfile, error: currentError } = await client
       .from("profiles")
-      .select("id, display_name, role, agency_id, email")
+      .select("id, display_name, role, agency_id, email, order_disabled")
       .eq("id", id)
       .maybeSingle();
 
@@ -543,7 +552,7 @@ export async function PATCH(req: Request) {
     }
 
     const [{ data: updatedProfile }, { data: agencies }] = await Promise.all([
-      client.from("profiles").select("id, display_name, role, agency_id, email").eq("id", id).maybeSingle(),
+      client.from("profiles").select("id, display_name, role, agency_id, email, order_disabled").eq("id", id).maybeSingle(),
       client.from("agencies").select("id, name, code"),
     ]);
 

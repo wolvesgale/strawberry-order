@@ -16,6 +16,7 @@ type AdminUser = {
   role: 'admin' | 'agency';
   agencyId: string | null;
   agencyName: string | null;
+  orderDisabled: boolean;
 };
 
 type FetchResponse = {
@@ -132,6 +133,7 @@ export default function AdminUsersPage() {
           email: user.email ?? null,
           role: user.role,
           agencyId: user.agencyId ?? null,
+          orderDisabled: user.orderDisabled,
         }),
       });
 
@@ -532,6 +534,7 @@ function UserRow({
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email ?? '');
   const [role, setRole] = useState<'admin' | 'agency'>(user.role);
+  const [orderDisabled, setOrderDisabled] = useState(user.orderDisabled);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [rowPassword, setRowPassword] = useState('');
 
@@ -540,6 +543,7 @@ function UserRow({
     setName(user.name);
     setEmail(user.email ?? '');
     setRole(user.role);
+    setOrderDisabled(user.orderDisabled);
   }, [user]);
 
   async function handleSave() {
@@ -549,6 +553,7 @@ function UserRow({
       email: email.trim() || null,
       role,
       agencyId: selectedAgencyId || null,
+      orderDisabled,
     });
   }
 
@@ -603,6 +608,29 @@ function UserRow({
         </td>
         <td className="px-3 py-2">
           <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                const next = !orderDisabled;
+                setOrderDisabled(next);
+                onUpdate({
+                  ...user,
+                  name,
+                  email: email.trim() || null,
+                  role,
+                  agencyId: selectedAgencyId || null,
+                  orderDisabled: next,
+                });
+              }}
+              disabled={saving || changingPassword}
+              className={`inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
+                orderDisabled
+                  ? 'border-orange-500 bg-orange-500/20 text-orange-200 hover:bg-orange-500/30'
+                  : 'border-slate-500 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {orderDisabled ? '発注停止中' : '発注許可中'}
+            </button>
             <button
               type="button"
               onClick={handleSave}
