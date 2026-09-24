@@ -3,6 +3,21 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
+// GET: 代理店一覧取得
+export async function GET() {
+  if (!supabaseAdmin) {
+    return NextResponse.json({ error: "Server config error" }, { status: 500 });
+  }
+  const { data, error } = await supabaseAdmin
+    .from("agencies")
+    .select("id, name, code")
+    .order("name");
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ agencies: data ?? [] });
+}
+
 // PATCH: 代理店名変更（agencies + orders.agency_name を更新）
 export async function PATCH(req: Request) {
   if (!supabaseAdmin) {

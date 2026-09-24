@@ -335,8 +335,14 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // agencyId が名前文字列にフォールバックしている場合に備え agencyName でも照合
     const filteredOrders = agencyId
-      ? orders.filter((order) => order.agencyId === agencyId)
+      ? orders.filter(
+          (order) =>
+            order.agencyId === agencyId ||
+            order.agencyName === agencyId ||
+            (agencyName ? order.agencyName === agencyName : false)
+        )
       : agencyName
       ? orders.filter((order) => order.agencyName === agencyName)
       : orders;

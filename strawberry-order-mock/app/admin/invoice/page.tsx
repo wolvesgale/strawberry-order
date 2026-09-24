@@ -96,9 +96,11 @@ function InvoiceContent() {
     setLoading(true);
     setError(null);
     try {
-      const url = agencyId && agencyId !== "unassigned"
-        ? `/api/mock-orders?agencyId=${encodeURIComponent(agencyId)}`
-        : "/api/mock-orders";
+      // agencyId が名前文字列にフォールバックしている場合に備え agencyName も渡す
+      const qp = new URLSearchParams();
+      if (agencyId && agencyId !== "unassigned") qp.set("agencyId", agencyId);
+      if (agencyName && agencyName !== "(代理店名未設定)") qp.set("agencyName", agencyName);
+      const url = qp.toString() ? `/api/mock-orders?${qp.toString()}` : "/api/mock-orders";
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error("注文データの取得に失敗しました。");
       const json = await res.json();

@@ -581,6 +581,7 @@ export default function AdminOrdersPage() {
                   </thead>
                   <tbody>
                     {monthlySummary.byAgency.map((row) => {
+                      // agencyId が名前文字列にフォールバックしている場合も agencyName で検索できるよう両方渡す
                       const invoiceUrl = `/admin/invoice?agencyId=${encodeURIComponent(row.agencyId)}&agencyName=${encodeURIComponent(row.agencyName)}&month=${encodeURIComponent(selectedMonth)}`;
                       return (
                         <tr key={row.agencyId} className="border-t border-slate-800">
