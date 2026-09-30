@@ -49,7 +49,8 @@ export async function GET(req: NextRequest) {
       name: p.display_name ?? "",
       email: authUser?.email ?? p.email ?? "",
       role: p.role ?? "agency",
-      active: authUser?.banned_until ? false : true,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      active: !((authUser as any)?.banned_until),
       createdAt: authUser?.created_at ?? null,
     };
   });
