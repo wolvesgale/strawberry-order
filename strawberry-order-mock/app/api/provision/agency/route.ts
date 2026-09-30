@@ -85,16 +85,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // profiles 作成
-  const { error: profileError } = await client.from("profiles").insert({
+  // profiles 作成（トリガーが先に行を作る場合があるので upsert）
+  const { error: profileError } = await client.from("profiles").upsert({
     id: authData.user.id,
     display_name: agencyName,
     role: "agency",
     agency_id: agencyId,
     email: email.toLowerCase(),
-  });
+  }, { onConflict: "id" });
   if (profileError) {
-    // auth ユーザーは作成済みなのでロールバック
     await client.auth.admin.deleteUser(authData.user.id);
     return NextResponse.json(
       { ok: false, error: "プロフィール作成に失敗しました。" },
