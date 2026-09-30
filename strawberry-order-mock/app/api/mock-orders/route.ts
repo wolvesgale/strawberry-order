@@ -696,30 +696,30 @@ export async function POST(request: NextRequest) {
 
     let messageId: string | null = null;
 
-    if (ORDER_MAIL_MODE === "ses") {
-      const { sendOrderEmail } = await import("@/lib/ses");
+    if (ORDER_MAIL_MODE === "ses" || ORDER_MAIL_MODE === "resend") {
+      const { sendOrderEmail } = ORDER_MAIL_MODE === "resend"
+        ? await import("@/lib/resend")
+        : await import("@/lib/ses");
       try {
         messageId = await sendOrderEmail({ subject, bodyText });
 
-        // ★ 修正：MessageId が取れない（=設定不足で送信スキップ等）場合でも 500 にしない
-        // ここで 500 にすると、DB保存済みなのにユーザーが再送→重複注文の原因になる
         if (!messageId) {
-          console.warn("[SES] Email skipped or MessageId missing. Keep order as pending.", {
+          console.warn("[MAIL] Email skipped or ID missing. Keep order as pending.", {
             orderNumber: saved.orderNumber,
           });
           return NextResponse.json({
             ok: true,
-            order: saved, // status: pending のまま
+            order: saved,
             emailSent: false,
           });
         }
 
-        console.log("[SES] Order mail sent", {
+        console.log("[MAIL] Order mail sent", {
           orderNumber: saved.orderNumber,
           messageId,
         });
       } catch (err) {
-        console.error("[SES] Failed to send order mail", err);
+        console.error("[MAIL] Failed to send order mail", err);
         return NextResponse.json(
           { error: "メール送信に失敗しました。" },
           { status: 500 }
