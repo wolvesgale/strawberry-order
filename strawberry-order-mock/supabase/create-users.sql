@@ -3,15 +3,6 @@
 -- ※ 宮岡（苺ぽんぽこ堂）は別途追加
 -- ================================================
 
--- パスワード一覧（新規発行分）:
--- furutako08@icloud.com / SLTAuriKaPgE
--- ia.dor9192@gmail.com / N2iYLWHXQteN
--- sumiyasaki47@gmail.com / 68gZSJoQM4hz
--- aikawa0315@gmail.com / SkyTNv8BPwb1
--- datensin564219@yahoo.co.jp / dw4fHzDiwwI2
--- kanedayuto@yahoo.co.jp / HSq7vbsBaz4E
--- togachef0707@gmail.com / ev5HlUqcbeYk
--- kymknsk@gmail.com / bTU9mPIIKPeo
 
 DO $$
 DECLARE
