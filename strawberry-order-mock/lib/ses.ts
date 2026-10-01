@@ -1,12 +1,11 @@
-// lib/ses.ts
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import { STSClient, AssumeRoleWithWebIdentityCommand } from "@aws-sdk/client-sts";
 
 const REGION =
   process.env.AWS_REGION ||
   process.env.AWS_DEFAULT_REGION ||
   "ap-northeast-1";
 
-// Vercel 側のキー（SES_FROM_EMAIL）を優先しつつ後方互換も残す
 const FROM =
   process.env.SES_FROM_EMAIL ||
   process.env.ORDER_FROM_EMAIL ||
@@ -14,14 +13,12 @@ const FROM =
   process.env.SES_FROM ||
   undefined;
 
-// To（仕入れ先）
 const ORDER_TO =
   process.env.ORDER_TO_EMAIL ||
   process.env.ORDER_TO ||
   process.env.ORDER_TO_ADDRESS ||
   undefined;
 
-// ★追加：CC（Vercel で設定している想定のキーを優先しつつ後方互換）
 const ORDER_CC_RAW =
   process.env.ORDER_CC_EMAIL ||
   process.env.ORDER_CC ||
@@ -30,7 +27,6 @@ const ORDER_CC_RAW =
   process.env.ORDER_CC_EMAILS ||
   undefined;
 
-// "a@x.com,b@y.com" / "a@x.com b@y.com" / 改行区切りなどを許容
 function parseEmailList(raw?: string): string[] {
   if (!raw) return [];
   return raw
@@ -41,23 +37,44 @@ function parseEmailList(raw?: string): string[] {
 
 const DEFAULT_CC = parseEmailList(ORDER_CC_RAW);
 
-const sesClient = new SESClient({
-  region: REGION,
-  credentials:
-    process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
-      ? {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-        }
-      : undefined,
-});
+// Vercel OIDC (VERCEL_OIDC_TOKEN + AWS_ROLE_ARN) で STS 一時クレデンシャルを取得する
+async function resolveCredentials() {
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    return {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    };
+  }
+
+  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
+  const roleArn = process.env.AWS_ROLE_ARN;
+
+  if (oidcToken && roleArn) {
+    const sts = new STSClient({ region: REGION });
+    const { Credentials } = await sts.send(
+      new AssumeRoleWithWebIdentityCommand({
+        RoleArn: roleArn,
+        RoleSessionName: "vercel-strawberry-order",
+        WebIdentityToken: oidcToken,
+      })
+    );
+    if (!Credentials?.AccessKeyId || !Credentials?.SecretAccessKey) {
+      throw new Error("[SES] STS AssumeRoleWithWebIdentity: no credentials returned");
+    }
+    return {
+      accessKeyId: Credentials.AccessKeyId,
+      secretAccessKey: Credentials.SecretAccessKey,
+      sessionToken: Credentials.SessionToken,
+    };
+  }
+
+  return undefined;
+}
 
 export type OrderEmailPayload = {
   subject: string;
   bodyText: string;
-  /** 仕入れ先を個別指定したい場合だけ使用。通常は環境変数 ORDER_TO_EMAIL を使用 */
   to?: string;
-  /** CC 宛先（指定があれば env より優先） */
   cc?: string[];
 };
 
@@ -69,12 +86,10 @@ export async function sendOrderEmail({
 }: OrderEmailPayload): Promise<string | null> {
   const resolvedTo = to ?? ORDER_TO;
 
-  // cc が渡されていればそれを優先。なければ env の DEFAULT_CC を使用
   const resolvedCc = (cc && cc.length > 0 ? cc : DEFAULT_CC)
     .map((s) => String(s).trim())
     .filter((s) => s.length > 0);
 
-  // To と CC の重複排除（同一アドレスが両方に入るのを避ける）
   const ccDeduped = resolvedTo
     ? resolvedCc.filter((addr) => addr !== resolvedTo)
     : resolvedCc;
@@ -86,6 +101,8 @@ export async function sendOrderEmail({
     ORDER_CC_RAW,
     resolvedTo,
     resolvedCc: ccDeduped,
+    hasOidcToken: !!process.env.VERCEL_OIDC_TOKEN,
+    hasRoleArn: !!process.env.AWS_ROLE_ARN,
   });
 
   if (!REGION || !FROM) {
@@ -94,23 +111,18 @@ export async function sendOrderEmail({
   }
 
   if (!resolvedTo) {
-    console.warn(
-      "[SES] No recipient specified (ORDER_TO_EMAIL not set, and no 'to' provided). Skipping send."
-    );
+    console.warn("[SES] No recipient specified. Skipping send.");
     return null;
   }
 
-  console.log("[SES] Sending email", {
-    subject,
-    to: resolvedTo,
-    cc: ccDeduped,
-  });
+  const credentials = await resolveCredentials();
+
+  const sesClient = new SESClient({ region: REGION, credentials });
 
   const command = new SendEmailCommand({
     Source: FROM,
     Destination: {
       ToAddresses: [resolvedTo],
-      // ★ここが本命：CC を指定（空なら付けない）
       ...(ccDeduped.length > 0 ? { CcAddresses: ccDeduped } : {}),
     },
     Message: {
