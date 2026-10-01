@@ -64,24 +64,36 @@ async function fetchEffectivePrice(
   piecesPerSheet?: number | null
 ): Promise<{ unitPrice: number; taxRate: number } | null> {
   const today = effectiveAt.slice(0, 10);
-  let query = client
-    .from("product_prices")
-    .select("unit_price, tax_rate")
-    .eq("product_name", productName)
-    .lte("effective_from", today)
-    .or(`effective_to.is.null,effective_to.gte.${today}`)
-    .order("effective_from", { ascending: false })
-    .limit(1);
 
-  if (piecesPerSheet != null) {
-    query = query.eq("pieces_per_sheet", piecesPerSheet);
+  async function queryPrices(activeOnly: boolean) {
+    let q = client
+      .from("product_prices")
+      .select("unit_price, tax_rate")
+      .eq("product_name", productName)
+      .lte("effective_from", today)
+      .order("effective_from", { ascending: false })
+      .limit(1);
+    if (activeOnly) {
+      q = q.or(`effective_to.is.null,effective_to.gte.${today}`);
+    }
+    if (piecesPerSheet != null) {
+      q = q.eq("pieces_per_sheet", piecesPerSheet);
+    }
+    return q;
   }
 
-  const { data, error } = await query;
-
+  // 有効期間内を優先し、なければ直近の価格にフォールバック
+  let { data, error } = await queryPrices(true);
   if (error) {
     console.error("[/api/mock-orders] product_prices lookup error", error);
     return null;
+  }
+  if (!data?.[0]) {
+    ({ data, error } = await queryPrices(false));
+    if (error) {
+      console.error("[/api/mock-orders] product_prices fallback lookup error", error);
+      return null;
+    }
   }
 
   const row = data?.[0];

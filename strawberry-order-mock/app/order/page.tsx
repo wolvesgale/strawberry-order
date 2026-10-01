@@ -141,15 +141,22 @@ export default function OrderPage() {
           effective_to: string | null;
         }[] = json.prices ?? [];
 
-        // 有効期間内のレコードを玉数ごとにまとめ、最新の適用開始日を採用
+        // 有効期間内のレコードを玉数ごとにまとめる。なければ直近の価格にフォールバック
+        const basePrices = allPrices.filter(
+          (p) =>
+            p.pieces_per_sheet != null &&
+            p.effective_from <= today &&
+            (p.effective_to == null || p.effective_to >= today)
+        );
+        const targetPrices =
+          basePrices.length > 0
+            ? basePrices
+            : allPrices.filter(
+                (p) => p.pieces_per_sheet != null && p.effective_from <= today
+              );
+
         const map = new Map<number, number>();
-        allPrices
-          .filter(
-            (p) =>
-              p.pieces_per_sheet != null &&
-              p.effective_from <= today &&
-              (p.effective_to == null || p.effective_to >= today)
-          )
+        targetPrices
           .sort((a, b) => b.effective_from.localeCompare(a.effective_from))
           .forEach((p) => {
             if (!map.has(p.pieces_per_sheet!)) {
