@@ -383,12 +383,13 @@ export async function POST(request: NextRequest) {
     console.log("[/api/mock-orders POST] body:", body);
 
     const productIdRaw = body.productId ?? body.product_id ?? null;
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const productId =
-      typeof productIdRaw === "string" && productIdRaw.trim().length > 0
+      typeof productIdRaw === "string" && UUID_RE.test(productIdRaw.trim())
         ? productIdRaw.trim()
         : null;
 
-    if (!productId) {
+    if (!productIdRaw) {
       return NextResponse.json(
         { error: "商品が選択されていません。" },
         { status: 400 }
