@@ -46,6 +46,7 @@ export default function OrderPage() {
 
   // 価格マスタ
   const [priceTable, setPriceTable] = useState<{ pieces: number; price: number }[]>([]);
+  const [pricesLoading, setPricesLoading] = useState(true);
 
   // UI状態
   const [submitting, setSubmitting] = useState(false);
@@ -127,7 +128,10 @@ export default function OrderPage() {
     async function fetchPrices() {
       try {
         const res = await fetch("/api/admin/prices", { cache: "no-store" });
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.error("[fetchPrices] API error", res.status);
+          return;
+        }
         const json = await res.json();
         const today = new Date().toISOString().slice(0, 10);
         const allPrices: {
@@ -157,8 +161,10 @@ export default function OrderPage() {
           .filter((n) => map.has(n))
           .map((n) => ({ pieces: n, price: map.get(n)! }));
         setPriceTable(table);
-      } catch {
-        // 価格取得失敗は非致命的
+      } catch (e) {
+        console.error("[fetchPrices] unexpected", e);
+      } finally {
+        setPricesLoading(false);
       }
     }
     fetchPrices();
@@ -344,8 +350,10 @@ export default function OrderPage() {
             玉数ごとに税抜単価が設定されています。発注時の単価算定に使用されます。
           </p>
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
-            {priceTable.length === 0 ? (
+            {pricesLoading ? (
               <p className="px-3 py-2 text-xs text-slate-400">価格情報を読み込み中...</p>
+            ) : priceTable.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-amber-400">現在有効な価格情報がありません。管理者にお問い合わせください。</p>
             ) : (
               <table className="min-w-full text-xs text-slate-100">
                 <tbody>
