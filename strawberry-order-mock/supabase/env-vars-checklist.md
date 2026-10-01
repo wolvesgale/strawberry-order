@@ -18,7 +18,7 @@ AWS SES の代わりに [Resend](https://resend.com) を使います（IAMキー
 |--------|-----|------|
 | `RESEND_API_KEY` | Resend ダッシュボードで発行 | `re_xxxxxxxx` |
 | `RESEND_FROM_EMAIL` | `saiya0318@saiya.info` | 送信元（要Resendでドメイン認証） |
-| `ORDER_TO_EMAIL` | ★クライアント（加藤さん）に確認 | 発注メール受信先 |
+| `ORDER_TO_EMAIL` | `green_sam607@yahoo.co.jp` | 発注メール受信先（加藤さん） |
 | `ORDER_CC_EMAIL` | 必要な場合のみ | CC宛先（任意） |
 | `ORDER_MAIL_MODE` | `resend` | `mock`=送信スキップ / `resend`=実送信 |
 
