@@ -682,7 +682,7 @@ export async function POST(request: NextRequest) {
     const subject = `いちご発注受付（${agencyLabel} / ${orderDateStr}）`;
 
     const mailLines: string[] = [];
-    mailLines.push("いちご発注が登録されました。");
+    mailLines.push("下記の通り発注いたします。");
     mailLines.push("");
     mailLines.push(`注文番号：${saved.orderNumber}`);
     mailLines.push("");
