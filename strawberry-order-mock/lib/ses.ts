@@ -1,5 +1,5 @@
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
-import { STSClient, AssumeRoleWithWebIdentityCommand } from "@aws-sdk/client-sts";
+import { awsCredentialsProvider } from "@vercel/functions/oidc";
 
 const REGION =
   process.env.AWS_REGION ||
@@ -37,38 +37,28 @@ function parseEmailList(raw?: string): string[] {
 
 const DEFAULT_CC = parseEmailList(ORDER_CC_RAW);
 
-// Vercel OIDC (VERCEL_OIDC_TOKEN + AWS_ROLE_ARN) で STS 一時クレデンシャルを取得する
-async function resolveCredentials() {
-  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-    return {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    };
-  }
-
-  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
+function buildSESClient() {
   const roleArn = process.env.AWS_ROLE_ARN;
 
-  if (oidcToken && roleArn) {
-    const sts = new STSClient({ region: REGION });
-    const { Credentials } = await sts.send(
-      new AssumeRoleWithWebIdentityCommand({
-        RoleArn: roleArn,
-        RoleSessionName: "vercel-strawberry-order",
-        WebIdentityToken: oidcToken,
-      })
-    );
-    if (!Credentials?.AccessKeyId || !Credentials?.SecretAccessKey) {
-      throw new Error("[SES] STS AssumeRoleWithWebIdentity: no credentials returned");
-    }
-    return {
-      accessKeyId: Credentials.AccessKeyId,
-      secretAccessKey: Credentials.SecretAccessKey,
-      sessionToken: Credentials.SessionToken,
-    };
+  // Vercel OIDC (awsCredentialsProvider) を優先、なければ静的キー、なければデフォルトチェーン
+  if (roleArn) {
+    return new SESClient({
+      region: REGION,
+      credentials: awsCredentialsProvider({ roleArn }),
+    });
   }
 
-  return undefined;
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    return new SESClient({
+      region: REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+    });
+  }
+
+  return new SESClient({ region: REGION });
 }
 
 export type OrderEmailPayload = {
@@ -98,10 +88,8 @@ export async function sendOrderEmail({
     REGION,
     FROM,
     ORDER_TO,
-    ORDER_CC_RAW,
     resolvedTo,
     resolvedCc: ccDeduped,
-    hasOidcToken: !!process.env.VERCEL_OIDC_TOKEN,
     hasRoleArn: !!process.env.AWS_ROLE_ARN,
   });
 
@@ -115,9 +103,7 @@ export async function sendOrderEmail({
     return null;
   }
 
-  const credentials = await resolveCredentials();
-
-  const sesClient = new SESClient({ region: REGION, credentials });
+  const sesClient = buildSESClient();
 
   const command = new SendEmailCommand({
     Source: FROM,
